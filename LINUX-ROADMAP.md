@@ -1663,6 +1663,7 @@ Source: `macos/Sources/Features/HostManager/HostManagerController.swift` (`prese
 - **Presenter.** `presentFileEditor(model:)` builds an `NSHostingView(FileViewerView(model:onClose:))`, sizes it to `container.bounds` with `autoresizingMask = [.width,.height]`, and adds it as the **topmost** subview of the container (`positioned: .above`). `dismissFileEditor()` removes it; the viewer's own ✕ calls back into it.
   - Autoresizing (not Auto Layout) is mandatory — pinning a hosting view with required constraints lets SwiftUI's intrinsic size force the window past the screen (documented on the container).
   - The overlay covers the tab strip (which lives in the content, not the titlebar); the native titlebar/traffic-lights remain.
+- **Clear the terminal's link-hover banner on present.** A `.md` path is opened by ⌘-clicking a *hovered* link, but the overlay then covers the surface, so it never receives a mouse-exit to clear that hover — leaving the "⌘ click to open" banner (driven by `surfaceView.hoverUrl`) stuck on screen after the editor closes. `presentFileEditor` nils the focused surface's `hoverUrl` up front. A GTK port must do the same: when opening this overlay from a link activation, clear the surface's hovered-link state so the hint doesn't persist.
 - **Why not a separate window.** An earlier iteration used a borderless child `NSWindow` sized over the parent and re-covered on the parent's move/resize/screen-change notifications. Even as a child window it (a) floated above other apps when the app was deactivated, (b) detached / left a sliver when dragged between displays of different size/scale, and (c) appeared separately in Mission Control. An in-window subview eliminates all three by construction — there is no second window.
 - The viewer's `.background(.regularMaterial)` blurs the dashboard behind it so it reads as an opaque cover.
 
@@ -1685,6 +1686,7 @@ Explicitly **do not** port this as a second `GtkWindow` layered over the main on
 3. With the editor open, click another application — the whole window (editor included) goes behind it; the editor never floats on top on its own.
 4. In the window overview / expose equivalent, the editor is part of the one window, not a separate tile.
 5. Close via ✕ returns to the dashboard underneath.
+6. ⌘-click a `.md` path in the terminal to open the viewer, then close it: the "⌘ click to open" hover hint must not remain stuck on the terminal afterward.
 
 ## 24. File browser & tooltip refinements
 
@@ -1805,6 +1807,21 @@ Explicitly **do not** port this as a second `GtkWindow` layered over the main on
 **macOS→Linux.** Straight port: run `docker`/`kubectl` via `$SHELL -lc` (`GSubprocess`), parse the same JSON, and spawn a pane whose command is `<abs-path> exec -it <name> sh` — the same "run as the process, absolute path, no quoted-arg wrapper" rules apply to any libghostty apprt. Sidebar tab is a `GtkStack` page; row menu is a `GMenu`.
 
 **Verify on Linux.** With Docker running, the Attach tab lists containers; the terminal-icon menu → "Open in new tab" drops you into `sh` inside the container (single spawn, no echoed command). "Run in current tab" types+runs it in the focused terminal. `kubectl` pods behave the same; a missing daemon/cluster shows a friendly note, not a raw error dump.
+
+## 32. Terminal-state recovery: Reset Terminal + cursor-key auto-heal
+
+**What it is.** Recovery from a terminal left in a broken input/display mode by a program killed without cleanup (Ctrl+C'ing a raw-mode dev server, a crashed TUI): stuck application cursor-keys mode (arrow keys emit literal `^[OA` instead of navigating history), mouse reporting, alternate screen, colors, scroll region. Two mechanisms:
+- **Reset Terminal** — a **View menu** item (added programmatically at launch, not via the nib) plus a rebindable **"Reset terminal"** keybind, both firing libghostty's `reset` binding action. This is a **full** reset (like the `reset` command, not just RIS): it runs `terminal.fullReset()` (emulator — cursor keys, mouse, alt-screen, colors, scroll region) **and** restores the child pty's TTY termios to sane. So it recovers raw-mode corruption too — the literal `^L` from ⌘K and `^[OA` from arrows that a killed program leaves behind.
+- **Cursor-key auto-heal** — the zsh shell-integration resets application cursor-keys mode (`\e[?1l`) at each real prompt, so arrow keys self-heal with no user action.
+
+**Logic.**
+- The `reset` action, `Ghostty.App.resetTerminal(surface:)`, and the `@objc resetTerminal(_:)` responder handlers on `SurfaceView_AppKit` / `BaseTerminalController` already existed in libghostty — only the **menu item** and the **keybind-registry entry** (`Keybind.swift`) were missing. The menu item targets the **First Responder** so it routes to the focused surface's handler and auto-disables when no terminal is focused.
+- **TTY reset (shared core, so GTK inherits it).** Upstream's `reset` action only did `terminal.fullReset()` (emulator). We extended it in `Surface.zig` to also queue a new `reset_tty` termio message: `Pty` snapshots the pristine post-`openpty` termios and `Pty.resetMode()` restores it via `tcsetattr` (an `stty sane` on the master fd). Plumbing: `Surface` → `reset_tty` message → `Thread` → `Termio.resetTty` → `backend.resetPtyMode` → `Exec`/`Subprocess` → `Pty.resetMode`. This is the piece that fixes `^L`/`^[OA`, which an emulator-only RIS cannot. (Audit: ⌘K's form-feed is the *only* keybind that injects a shell-interpreted control byte — every other pty write is real keyboard/mouse input or a program-triggered response — so no per-action fixes are needed; the TTY reset is the universal recovery.)
+- The auto-heal writes the DECCKM-off sequence to the ghostty fd inside `_ghostty_precmd`'s `! builtin zle` guard (real prompts only, not zle-triggered precmd) — a one-line divergence from upstream Ghostty's zsh integration script.
+
+**macOS→Linux.** The `reset` action — including the new TTY-reset plumbing (`reset_tty` message + `Pty.resetMode`) — is shared libghostty core, so **GTK inherits the full behavior for free**; the GTK apprt only needs the same **surfacing**: a menu/action entry (`GMenu` / `GtkApplication` action) and a rebindable keybind row, both dispatching `reset` to the focused surface. `Pty.resetMode` uses POSIX `tcsetattr`, which is identical on Linux. The zsh-integration one-liner is shell-side and platform-agnostic (same `shell-integration/zsh/ghostty-integration` ships on Linux); bash/fish equivalents are TODO.
+
+**Verify on Linux.** Put the terminal in a broken mode (`printf '\e[?1h'` then arrows show `^[OA`, or kill a raw-mode TUI so the shell echoes control bytes — arrows show `^[OA`, clear-screen adds a literal `^L`); the menu "Reset Terminal" (or the bound key) restores normal input **and** the TTY (arrows navigate history again, clear-screen clears instead of printing `^L`) — no typed `reset` needed. Then open a fresh shell, break DECCKM from a killed program, and confirm the next prompt's arrow keys work without a manual reset (the auto-heal).
 
 ## Appendix A. Visual design reference
 

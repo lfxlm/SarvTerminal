@@ -609,6 +609,7 @@ final class VaultsTabsModel: ObservableObject {
         guard let conn = connections[surfaceID] else { return }
         conn.controller.stop()
         deleteTempFile(conn.model.passwordFilePath)
+        deleteTempFile(conn.model.jumpPasswordFilePath)
         connections[surfaceID] = nil
     }
 
@@ -755,13 +756,30 @@ final class VaultsTabsModel: ObservableObject {
         return "\(shellQuote(exe)) +ssh \(flags.joined(separator: " ")) -- \(command.dropFirst(4))"
     }
 
-    private func makeSSHSurface(app: ghostty_app_t, command: String, password: String?, termOverride: String = "")
-        -> (surface: Ghostty.SurfaceView, passwordFile: String?) {
+    private func makeSSHSurface(app: ghostty_app_t, command: String, password: String?,
+                                termOverride: String = "", host: SavedHost? = nil)
+        -> (surface: Ghostty.SurfaceView, passwordFile: String?, jumpPasswordFile: String?) {
         var full = wrapSSHCommand(command, termOverride: termOverride)
         var passwordFile: String?
+        var jumpPasswordFile: String?
         if let pw = password, !pw.isEmpty {
-            let env = SSHAskpass.env(forPassword: pw)
+            // Look up the jump host's password if proxyJump is configured.
+            // SSH passwords prompts never include the port, so strip it for
+            // matching (e.g. "user@host:2222" → prompt is "user@host's password:").
+            let jumpHostID = host?.proxyJump
+            let jumpHostPromptID = jumpHostID.map { id -> String in
+                if let colon = id.lastIndex(of: ":") { return String(id[..<colon]) }
+                return id
+            }
+            let jumpPassword: String?
+            if let jumpHostID, !jumpHostID.isEmpty {
+                jumpPassword = Self.jumpPassword(for: jumpHostID)
+            } else {
+                jumpPassword = nil
+            }
+            let env = SSHAskpass.env(forPassword: pw, jumpHostID: jumpHostPromptID, jumpPassword: jumpPassword)
             passwordFile = env["SARV_ASKPASS_FILE"]
+            jumpPasswordFile = env["SARV_JUMP_ASKPASS_FILE"]
             // Use the `env` command (not bare VAR=val) so the assignments
             // survive macOS's `bash -c "exec -l <command>"` wrapper, where
             // `exec -l VAR=val ssh` would treat "VAR=val" as the program name.
@@ -770,7 +788,12 @@ final class VaultsTabsModel: ObservableObject {
         }
         var cfg = Ghostty.SurfaceConfiguration()
         cfg.command = full
-        return (Ghostty.SurfaceView(app, baseConfig: cfg), passwordFile)
+        return (Ghostty.SurfaceView(app, baseConfig: cfg), passwordFile, jumpPasswordFile)
+    }
+
+    /// Find the password of a saved host matching the proxyJump string.
+    private static func jumpPassword(for proxyJump: String) -> String? {
+        SavedHostsStore.shared.hosts.first { $0.jumpString == proxyJump }?.password
     }
 
     /// Remove the askpass password temp file (no-op if nil/absent) so we never
@@ -844,12 +867,14 @@ final class VaultsTabsModel: ObservableObject {
               let node = tab.surfaceTree.root?.node(view: oldSurface),
               let app = (NSApp.delegate as? AppDelegate)?.ghostty.app else { return }
         deleteTempFile(model.passwordFilePath)   // discard the previous attempt's password file
+        deleteTempFile(model.jumpPasswordFilePath)
         // Rebuild the command from the LATEST saved host (the user may have just
         // edited it), so changed port/options take effect on reconnect.
         let latestHost = model.host.flatMap { SavedHostsStore.shared.host(withID: $0.id) } ?? model.host
         let command = latestHost.map { $0.sshCommand(staged: true) } ?? conn.command
         let made = makeSSHSurface(app: app, command: command, password: password,
-                                  termOverride: latestHost?.termOverride ?? "")
+                                  termOverride: latestHost?.termOverride ?? "",
+                                  host: latestHost)
         applyHostTheme(model.host, to: made.surface)
         // Replace only this pane's node — works whether it's the whole tab or one
         // pane of a split.
@@ -858,7 +883,16 @@ final class VaultsTabsModel: ObservableObject {
         } else {
             tab.surfaceTree = .init(view: made.surface)
         }
+        // Transfer the title override from the old surface to the new one
+        // so the pane header keeps showing the host label (e.g. after password
+        // submit, reconnect, or drag-to-split).
+        if let override = tab.paneTitleOverrides.removeValue(forKey: oldID) {
+            tab.paneTitleOverrides[made.surface.id] = override
+        } else if let host = model.host {
+            tab.paneTitleOverrides[made.surface.id] = host.displayLabel
+        }
         model.passwordFilePath = made.passwordFile
+        model.jumpPasswordFilePath = made.jumpPasswordFile
         model.silent = true            // attempting with a known password — no field while connecting
         model.stage = .connecting
         conn.controller.stop()
@@ -943,10 +977,12 @@ final class VaultsTabsModel: ObservableObject {
             SavedHostsStore.shared.upsert(updated)
         }
         model.stage = .connected
-        // Logged in: drop the askpass password file. ssh keeps its now-unlinked
-        // fd; the file is freed when ssh exits.
+        // Logged in: drop the askpass password files. ssh keeps its now-unlinked
+        // fd; the files are freed when ssh exits.
         deleteTempFile(model.passwordFilePath)
         model.passwordFilePath = nil
+        deleteTempFile(model.jumpPasswordFilePath)
+        model.jumpPasswordFilePath = nil
         if let id = surfaceID(for: model), let surface = surface(withID: id) {
             Ghostty.moveFocus(to: surface)
             // Startup command (host editor → Startup): typed into the freshly
@@ -1039,14 +1075,17 @@ final class VaultsTabsModel: ObservableObject {
 
         let boundSurface: Ghostty.SurfaceView
         var passwordFile: String?
+        var jumpPasswordFile: String?
         if needsPassword {
             // Keep the placeholder surface; the popup collects the password.
             boundSurface = surface
         } else {
             // Swap the placeholder pane for a live ssh surface.
-            let made = makeSSHSurface(app: app, command: command, password: knownPassword, termOverride: host.termOverride)
+            let made = makeSSHSurface(app: app, command: command, password: knownPassword,
+                                   termOverride: host.termOverride, host: host)
             boundSurface = made.surface
             passwordFile = made.passwordFile
+            jumpPasswordFile = made.jumpPasswordFile
             applyHostTheme(host, to: made.surface)
             if let newTree = try? tab.surfaceTree.replacing(node: node, with: .leaf(view: made.surface)) {
                 tab.surfaceTree = newTree
@@ -1054,7 +1093,7 @@ final class VaultsTabsModel: ObservableObject {
         }
 
         let model = SSHConnectionModel(title: host.displayLabel, host: host, needsPassword: needsPassword)
-        if !needsPassword { model.passwordFilePath = passwordFile }
+        if !needsPassword { model.passwordFilePath = passwordFile; model.jumpPasswordFilePath = jumpPasswordFile }
         let controller = SSHConnectionController(model: model, surfaceView: boundSurface, tabsModel: self)
         connections[boundSurface.id] = ActiveConnection(model: model, controller: controller, command: command)
         // Label the pane with the host name: the live SSH surface title is the

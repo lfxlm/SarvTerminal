@@ -459,107 +459,9 @@ extension Ghostty {
         var body: some View {
             GeometryReader { geo in
                 VStack(alignment: .leading, spacing: 6) {
-                  HStack(spacing: 4) {
-                    BackportSelectionTextField(
-                        "Search",
-                        text: $searchState.needle,
-                        selection: $searchState.needleSelection
-                    )
-                    .textFieldStyle(.plain)
-                    .frame(width: 180)
-                    .padding(.leading, 8)
-                    .padding(.trailing, 50)
-                    .padding(.vertical, 6)
-                    .background(Color.primary.opacity(0.1))
-                    .cornerRadius(6)
-                    .focused($isSearchFieldFocused)
-                    .overlay(alignment: .trailing) {
-                        if let selected = searchState.selected {
-                            Text("\(selected + 1)/\(searchState.total, default: "?")")
-                                .font(.caption)
-                                .foregroundColor(.secondaryText)
-                                .monospacedDigit()
-                                .padding(.trailing, 8)
-                        } else if let total = searchState.total {
-                            Text("-/\(total)")
-                                .font(.caption)
-                                .foregroundColor(.secondaryText)
-                                .monospacedDigit()
-                                .padding(.trailing, 8)
-                        }
-                    }
-                    .onChange(of: searchState.needle) { _ in
-                        searchState.writePasteboardNeedle()
-                    }
-                    .onReceive(
-                        NotificationCenter.default.publisher(
-                            for: OSApplication.didBecomeActiveNotification
-                        )
-                    ) { _ in
-                        // When the app becomes active, we want to check for external changes
-                        // to our synced needle.
-                        searchState.readPasteboardNeedle()
-                    }
-                    .onSubmit {
-                        _ = surfaceView.navigateSearchToNext()
-                    }
-#if canImport(AppKit)
-                    .onExitCommand {
-                        if searchState.needle.isEmpty {
-                            onClose()
-                        } else {
-                            Ghostty.moveFocus(to: surfaceView)
-                        }
-                    }
-#endif
-                    .backport.onKeyPress(.return) { modifiers in
-                        if modifiers.contains(.shift) {
-                            _ = surfaceView.navigateSearchToPrevious()
-                            return .handled
-                        }
-                        return .ignored
-                    }
+                    searchToolbar
 
-                    Button(action: {
-                        _ = surfaceView.navigateSearchToNext()
-                    }, label: {
-                        Image(systemName: "chevron.up")
-                    })
-                    .buttonStyle(SearchButtonStyle())
-                    .hoverTip("Next match (↩)")
-
-                    Button(action: {
-                        guard let surface = surfaceView.surface else { return }
-                        let action = "navigate_search:previous"
-                        ghostty_surface_binding_action(surface, action, UInt(action.lengthOfBytes(using: .utf8)))
-                    }, label: {
-                        Image(systemName: "chevron.down")
-                    })
-                    .buttonStyle(SearchButtonStyle())
-                    .hoverTip("Previous match (⇧↩)")
-
-                    Button(action: {
-                        withAnimation(.easeInOut(duration: 0.12)) { showAdvanced.toggle() }
-                    }, label: {
-                        Image(systemName: "slider.horizontal.3")
-                    })
-                    .buttonStyle(SearchButtonStyle())
-                    .background(
-                        RoundedRectangle(cornerRadius: 6)
-                            .fill(searchState.filterEnabled
-                                  ? Color.accentColor.opacity(0.30)
-                                  : (showAdvanced ? Color.primary.opacity(0.12) : Color.clear))
-                    )
-                    .hoverTip("Advanced search options")
-
-                    Button(action: onClose) {
-                        Image(systemName: "xmark")
-                    }
-                    .buttonStyle(SearchButtonStyle())
-                    .hoverTip("Close search (Esc)")
-                  }
-
-                  if showAdvanced { advancedRow }
+                    if showAdvanced { advancedRow }
                 }
                 .padding(8)
                 .background(.background)
@@ -602,6 +504,107 @@ extension Ghostty {
                             }
                         }
                 )
+            }
+        }
+
+        @ViewBuilder
+        private var searchToolbar: some View {
+            HStack(spacing: 4) {
+                BackportSelectionTextField(
+                    "Search",
+                    text: $searchState.needle,
+                    selection: $searchState.needleSelection
+                )
+                .textFieldStyle(.plain)
+                .frame(width: 180)
+                .padding(.leading, 8)
+                .padding(.trailing, 50)
+                .padding(.vertical, 6)
+                .background(Color.primary.opacity(0.1))
+                .cornerRadius(6)
+                .focused($isSearchFieldFocused)
+                .overlay(alignment: .trailing) {
+                    if let selected = searchState.selected {
+                        Text("\(selected + 1)/\(searchState.total.map { "\($0)" } ?? "?")")
+                            .font(.caption)
+                            .foregroundColor(.secondaryText)
+                            .monospacedDigit()
+                            .padding(.trailing, 8)
+                    } else if let total = searchState.total {
+                        Text("-/\(total)")
+                            .font(.caption)
+                            .foregroundColor(.secondaryText)
+                            .monospacedDigit()
+                            .padding(.trailing, 8)
+                    }
+                }
+                .onChange(of: searchState.needle) { _ in
+                    searchState.writePasteboardNeedle()
+                }
+                .onReceive(
+                    NotificationCenter.default.publisher(
+                        for: OSApplication.didBecomeActiveNotification
+                    )
+                ) { _ in
+                    searchState.readPasteboardNeedle()
+                }
+                .onSubmit {
+                    _ = surfaceView.navigateSearchToNext()
+                }
+#if canImport(AppKit)
+                .onExitCommand {
+                    if searchState.needle.isEmpty {
+                        onClose()
+                    } else {
+                        Ghostty.moveFocus(to: surfaceView)
+                    }
+                }
+#endif
+                .backport.onKeyPress(.return) { modifiers in
+                    if modifiers.contains(.shift) {
+                        _ = surfaceView.navigateSearchToPrevious()
+                        return .handled
+                    }
+                    return .ignored
+                }
+
+                Button(action: {
+                    _ = surfaceView.navigateSearchToNext()
+                }, label: {
+                    Image(systemName: "chevron.up")
+                })
+                .buttonStyle(SearchButtonStyle())
+                .hoverTip("Next match (↩)")
+
+                Button(action: {
+                    guard let surface = surfaceView.surface else { return }
+                    let action = "navigate_search:previous"
+                    ghostty_surface_binding_action(surface, action, UInt(action.lengthOfBytes(using: .utf8)))
+                }, label: {
+                    Image(systemName: "chevron.down")
+                })
+                .buttonStyle(SearchButtonStyle())
+                .hoverTip("Previous match (⇧↩)")
+
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.12)) { showAdvanced.toggle() }
+                }, label: {
+                    Image(systemName: "slider.horizontal.3")
+                })
+                .buttonStyle(SearchButtonStyle())
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(searchState.filterEnabled
+                              ? Color.accentColor.opacity(0.30)
+                              : (showAdvanced ? Color.primary.opacity(0.12) : Color.clear))
+                )
+                .hoverTip("Advanced search options")
+
+                Button(action: onClose) {
+                    Image(systemName: "xmark")
+                }
+                .buttonStyle(SearchButtonStyle())
+                .hoverTip("Close search (Esc)")
             }
         }
 
@@ -657,11 +660,15 @@ extension Ghostty {
         }
 
         private var clipShape: some Shape {
+#if compiler(>=6.2)
             if #available(iOS 26.0, macOS 26.0, *) {
                 return ConcentricRectangle(corners: .concentric(minimum: 8), isUniform: true)
             } else {
                 return RoundedRectangle(cornerRadius: 8)
             }
+#else
+            return RoundedRectangle(cornerRadius: 8)
+#endif
         }
 
         enum Corner {

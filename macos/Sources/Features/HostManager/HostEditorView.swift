@@ -509,13 +509,15 @@ struct HostEditorView: View {
                                  focus: $focusedField, field: .keepAlive)
                         .id(HostEditorFocusField.keepAlive)
                         .help("Ping the server every N seconds so idle sessions don't drop — empty turns it off")
-                    EditorTextRow(icon: "arrow.triangle.branch",
-                                  placeholder: "Proxy jump host, e.g. user@bastion",
-                                  text: $draft.proxyJump,
-                                  onEditingEnded: { autosaveIf(!draft.proxyJump.isEmpty) },
-                                  focus: $focusedField, field: .proxyJump)
+                    EditorProxyJumpRow(icon: "arrow.triangle.branch",
+                                       title: "Proxy jump",
+                                       proxyJump: $draft.proxyJump,
+                                       availableHosts: store.hosts,
+                                       currentHostID: draft.id,
+                                       focus: $focusedField, field: .proxyJump)
                         .id(HostEditorFocusField.proxyJump)
                         .help("Reach this host through an intermediate jump host (-J)")
+                        .onChange(of: draft.proxyJump) { _ in fireAutosave() }
                     EditorBoolRow(icon: "arrow.down.right.and.arrow.up.left",
                                   title: "Compression (-C)",
                                   isOn: $draft.useCompression,

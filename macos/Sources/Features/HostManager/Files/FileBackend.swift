@@ -135,7 +135,19 @@ final class RemoteFileBackend: FileBackend {
     init(host: SavedHost) {
         self.host = host
         self.location = .host(host)
-        self.askpassEnv = host.password.isEmpty ? [:] : SSHAskpass.env(forPassword: host.password)
+        // Look up the jump host's password if proxyJump is configured.
+        let jumpHostID = host.proxyJump.isEmpty ? nil : host.proxyJump
+        let jumpPassword: String?
+        if let jumpHostID {
+            jumpPassword = SavedHostsStore.shared.hosts.first { $0.jumpString == jumpHostID }?.password
+        } else {
+            jumpPassword = nil
+        }
+        self.askpassEnv = host.password.isEmpty
+            ? [:]
+            : SSHAskpass.env(forPassword: host.password,
+                             jumpHostID: jumpHostID,
+                             jumpPassword: jumpPassword)
     }
 
     private var target: String {

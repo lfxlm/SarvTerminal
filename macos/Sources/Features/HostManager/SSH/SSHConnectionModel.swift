@@ -53,8 +53,10 @@ final class SSHConnectionModel: ObservableObject {
     /// from synthesized milestones and the real terminal error. No file on disk.
     @Published var logEntries: [SSHLogEntry] = []
     @Published var showLogs: Bool = false
-    /// Path of the temp file holding the password for the askpass helper.
+    /// Path of the temp file holding the target host's password for the askpass helper.
     var passwordFilePath: String?
+    /// Path of the temp file holding the jump host's password (if proxyJump is configured).
+    var jumpPasswordFilePath: String?
 
     func addLog(_ symbol: String, _ color: Color, _ text: String) {
         logEntries.append(SSHLogEntry(symbol: symbol, color: color, text: text))

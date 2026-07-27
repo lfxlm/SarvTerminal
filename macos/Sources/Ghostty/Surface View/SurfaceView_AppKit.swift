@@ -1673,7 +1673,22 @@ extension Ghostty {
             item.setImageIfDesired(systemSymbolName: "pencil.line")
             item = menu.addItem(withTitle: "Change Terminal Title...", action: #selector(changeTitle(_:)), keyEquivalent: "")
 
+            // Send Password — available when the surface belongs to an SSH
+            // connection whose saved host has a password.
+            if let _ = sshPassword {
+                menu.addItem(.separator())
+                item = menu.addItem(withTitle: "Send Password", action: #selector(sendPassword(_:)), keyEquivalent: "")
+                item.setImageIfDesired(systemSymbolName: "key.fill")
+            }
+
             return menu
+        }
+
+        /// The SSH password for the host connected to this surface, if any.
+        private var sshPassword: String? {
+            guard let conn = VaultsTabsModel.shared.connections[id] else { return nil }
+            let pw = conn.model.passwordField
+            return pw.isEmpty ? nil : pw
         }
 
         // MARK: Menu Handlers
@@ -1708,6 +1723,13 @@ extension Ghostty {
             if !ghostty_surface_binding_action(surface, action, UInt(action.lengthOfBytes(using: .utf8))) {
                 AppDelegate.logger.warning("action failed action=\(action, privacy: .public)")
             }
+        }
+
+        /// Send the SSH password (followed by Enter) into the terminal.
+        /// Useful for sudo / su / any command that prompts for a password.
+        @IBAction func sendPassword(_ sender: Any?) {
+            guard let pw = sshPassword else { return }
+            surfaceModel?.sendText(pw + "\n")
         }
 
         @IBAction override func selectAll(_ sender: Any?) {

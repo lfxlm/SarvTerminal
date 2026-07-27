@@ -817,6 +817,207 @@ extension View {
     }
 }
 
+// MARK: - Proxy jump picker row
+
+/// A picker row that lets the user select a saved host as a jump/bastion host,
+/// or type a custom proxy jump string. Shows "None" / saved hosts / "Custom…"
+/// in a popover list, and reveals a text field when "Custom…" is chosen.
+struct EditorProxyJumpRow: View {
+    let icon: String
+    let title: String
+    @Binding var proxyJump: String
+    /// All saved hosts available for selection.
+    let availableHosts: [SavedHost]
+    /// The host being edited — excluded from the picker so it can't jump through itself.
+    var currentHostID: UUID? = nil
+    /// External focus tag for the editor's Tab/Shift+Tab chain.
+    var focus: FocusState<HostEditorFocusField?>.Binding? = nil
+    var field: HostEditorFocusField? = nil
+
+    @State private var isPresented = false
+    @State private var showCustomField = false
+    @FocusState private var customFocused: Bool
+
+    private var chainFocused: Bool { field != nil && focus?.wrappedValue == field }
+
+    /// Filtered hosts excluding the current host.
+    private var pickerHosts: [SavedHost] {
+        availableHosts.filter { $0.id != currentHostID }
+    }
+
+    /// The label for the currently selected option shown in the picker capsule.
+    private var currentLabel: String {
+        if let hostID = proxyJumpHostID,
+           let host = availableHosts.first(where: { $0.id == hostID })
+        {
+            return host.displayLabel
+        }
+        if !proxyJump.isEmpty { return "Custom…" }
+        return "None"
+    }
+
+    /// Determine which saved host ID (if any) matches the current proxyJump string.
+    private var proxyJumpHostID: UUID? {
+        availableHosts.first { host in
+            host.jumpString == proxyJump
+        }?.id
+    }
+
+    var body: some View {
+        VStack(spacing: 8) {
+            RowShell(isInteractive: true,
+                     onTap: { isPresented = true },
+                     isFocused: chainFocused || customFocused,
+                     hoverCursor: .pointingHand) {
+                HStack(spacing: 10) {
+                    Image(systemName: icon)
+                        .font(.system(size: 14))
+                        .foregroundStyle(.secondaryText)
+                        .frame(width: 18)
+                    Text(title)
+                    Spacer()
+                    HStack(spacing: 4) {
+                        Text(currentLabel)
+                            .font(.callout)
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.caption2)
+                            .foregroundStyle(.secondaryText)
+                    }
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .fill(Color(NSColor.controlColor))
+                    )
+                    .hoverCursor(.pointingHand)
+                }
+            }
+            .focusable()
+            .editorFocus(focus, field)
+            .modifier(ActivateOnKeyPress { isPresented = true })
+
+            // Custom text field when "Custom…" is chosen or proxyJump has a non-matching value.
+            if showCustomField {
+                HStack(spacing: 6) {
+                    TextField("user@bastion", text: $proxyJump)
+                        .textFieldStyle(.plain)
+                        .font(.system(.body, design: .monospaced))
+                        .focused($customFocused)
+                        .onChange(of: customFocused) { focused in
+                            if !focused, proxyJump.isEmpty {
+                                showCustomField = false
+                            }
+                        }
+                    if !proxyJump.isEmpty {
+                        Button {
+                            proxyJump = ""
+                            showCustomField = false
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(.secondaryText)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Clear proxy jump")
+                    }
+                }
+                .padding(.horizontal, 12).padding(.vertical, 8)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(Color.secondary.opacity(0.30), lineWidth: 1)
+                )
+                .padding(.leading, 28)
+            }
+        }
+        .popover(isPresented: $isPresented, arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: 2) {
+                // None — clears the jump host.
+                Button {
+                    proxyJump = ""
+                    showCustomField = false
+                    isPresented = false
+                } label: {
+                    HStack {
+                        Text("None")
+                        Spacer()
+                        if proxyJump.isEmpty {
+                            Image(systemName: "checkmark")
+                                .foregroundStyle(Color.accentColor)
+                        }
+                    }
+                    .padding(.horizontal, 10).padding(.vertical, 6)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .listRowHover()
+
+                if !pickerHosts.isEmpty {
+                    Divider()
+                    ForEach(pickerHosts) { host in
+                        Button {
+                            let jump = host.jumpString
+                            proxyJump = jump
+                            showCustomField = false
+                            isPresented = false
+                        } label: {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(host.displayLabel)
+                                        .font(.body)
+                                    Text(host.subtitle)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondaryText)
+                                }
+                                Spacer()
+                                let jump = host.username.isEmpty
+                                    ? host.hostname
+                                    : "\(host.username)@\(host.hostname)"
+                                if jump == proxyJump {
+                                    Image(systemName: "checkmark")
+                                        .foregroundStyle(Color.accentColor)
+                                }
+                            }
+                            .padding(.horizontal, 10).padding(.vertical, 6)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .listRowHover()
+                    }
+                }
+
+                Divider()
+                // Custom… — reveals a free-text field for manual entry.
+                Button {
+                    showCustomField = true
+                    isPresented = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        customFocused = true
+                    }
+                } label: {
+                    HStack {
+                        Text("Custom…")
+                        Spacer()
+                        if proxyJumpHostID == nil && !proxyJump.isEmpty {
+                            Image(systemName: "checkmark")
+                                .foregroundStyle(Color.accentColor)
+                        }
+                    }
+                    .padding(.horizontal, 10).padding(.vertical, 6)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .listRowHover()
+            }
+            .padding(6)
+            .frame(minWidth: 260)
+        }
+        .onAppear {
+            // Show custom field when proxyJump is set but doesn't match any saved host.
+            if proxyJumpHostID == nil && !proxyJump.isEmpty {
+                showCustomField = true
+            }
+        }
+    }
+}
+
 // MARK: - Subheading inside a card
 
 struct EditorSubheading: View {

@@ -307,6 +307,12 @@ extension SavedHost {
         !hostname.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
+    /// Proxy jump string (`user@host` or `user@host:port`) for the `-J` flag.
+    var jumpString: String {
+        let base = username.isEmpty ? hostname : "\(username)@\(hostname)"
+        return port != 22 ? "\(base):\(port)" : base
+    }
+
     /// "Password" auth requires a stored password — it's mandatory, because the
     /// connection popup never prompts for a password method (it connects with the
     /// saved one). If you don't want to store a password, use "Ask" instead.

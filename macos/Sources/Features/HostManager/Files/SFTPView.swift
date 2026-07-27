@@ -8,11 +8,19 @@ import SwiftUI
 /// `SFTPView`'s own `@StateObject` panes used to reset on every re-mount.
 /// Live progress for an in-flight transfer.
 struct TransferState: Equatable {
+    enum Status: Equatable {
+        case inProgress
+        case completed
+        case failed(String)
+        case cancelled
+    }
+
     var fileName: String
     var total: Int64          // 0 = indeterminate (e.g. a directory)
     var transferred: Int64
     var bytesPerSecond: Double
     var direct: Bool          // true = server→server direct; false = via this Mac
+    var status: Status = .inProgress
 }
 
 @MainActor
@@ -21,10 +29,10 @@ final class SFTPSession: ObservableObject {
     let left = SFTPBrowserModel()
     let right = SFTPBrowserModel()
 
-    /// Current transfer progress (nil when idle). Lives here so the overlay
+    /// Current transfers (typically 0–1 items). Lives here so the table
     /// survives the dashboard being torn down for a terminal tab.
-    @Published var transfer: TransferState?
-    /// The in-flight transfer task, so it can be cancelled from the overlay.
+    @Published var transfers: [TransferState] = []
+    /// The in-flight transfer task, so it can be cancelled from the table.
     var transferTask: Task<Void, Never>?
 
     func cancelTransfer() { transferTask?.cancel() }
@@ -66,10 +74,18 @@ struct SFTPView: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
-            FilePaneView(model: left) { handle($0, on: .left) }
-            Divider()
-            FilePaneView(model: right) { handle($0, on: .right) }
+        VStack(spacing: 0) {
+            HStack(spacing: 0) {
+                FilePaneView(model: left) { handle($0, on: .left) }
+                Divider()
+                FilePaneView(model: right) { handle($0, on: .right) }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            if !session.transfers.isEmpty {
+                Divider()
+                transfersTable
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear { SFTPSession.shared.startIfNeeded() }
@@ -135,52 +151,30 @@ struct SFTPView: View {
         .overlay {
             if let c = conflict { ConflictDialog(name: c.item.name) { resolve(c, $0) } }
         }
-        .overlay {
-            if let t = session.transfer { progressOverlay(t) }
-        }
     }
 
-    private func progressOverlay(_ t: TransferState) -> some View {
-        let fraction = t.total > 0 ? min(1, Double(t.transferred) / Double(t.total)) : 0
-        return ZStack {
-            Color.black.opacity(0.35).ignoresSafeArea()
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 8) {
-                    Image(systemName: t.direct ? "arrow.left.arrow.right" : "externaldrive.connected.to.line.below")
-                        .foregroundStyle(t.direct ? .green : .blue)
-                    Text(t.fileName).font(.callout.weight(.medium)).lineLimit(1).truncationMode(.middle)
-                    Spacer()
-                    Text(t.direct ? "Server → Server" : "Via this Mac")
-                        .font(.caption).foregroundStyle(t.direct ? .green : .secondary)
-                }
-                if t.total > 0 {
-                    ProgressView(value: fraction)
-                    HStack {
-                        Text("\(byteString(t.transferred)) / \(byteString(t.total)) · \(Int(fraction * 100))%")
-                        Spacer()
-                        Text(t.bytesPerSecond > 0 ? "\(byteString(Int64(t.bytesPerSecond)))/s" : "—")
-                    }
-                    .font(.caption.monospacedDigit()).foregroundStyle(.secondaryText)
-                } else {
-                    ProgressView()
-                    Text("Transferring…").font(.caption).foregroundStyle(.secondaryText)
-                }
-                if !t.direct {
-                    Label("Servers can't connect directly — relaying through this Mac (uses your bandwidth).",
-                          systemImage: "exclamationmark.triangle.fill")
-                        .font(.caption).foregroundStyle(.orange)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                HStack {
-                    Spacer()
-                    Button("Cancel") { session.cancelTransfer() }
-                        .controlSize(.small)
-                }
-                .padding(.top, 2)
+    // MARK: - Transfer table
+
+    /// Minimal transfer list at the bottom of the view.
+    private var transfersTable: some View {
+        VStack(spacing: 0) {
+            ForEach(session.transfers.indices, id: \.self) { idx in
+                let t = session.transfers[idx]
+                TransferRow(state: t, byteString: byteString,
+                            onCancel: { session.cancelTransfer() },
+                            onDelete: { session.transfers.remove(at: idx) })
             }
-            .padding(20)
-            .frame(width: 380)
-            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(.ultraThinMaterial))
+            HStack {
+                if session.transfers.allSatisfy({ $0.status != .inProgress }) {
+                    Spacer()
+                    Button("Clear completed") { session.transfers.removeAll() }
+                        .controlSize(.small)
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondaryText)
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
         }
     }
 
@@ -310,29 +304,45 @@ struct SFTPView: View {
                               onError: @escaping (String) -> Void) async {
         let destPath = destBackend.join(destDir, FileTransfer.finalName(for: item, resolution: resolution))
         let total = item.isDirectory ? 0 : item.size
-        session.transfer = TransferState(fileName: item.name, total: total, transferred: 0,
-                                         bytesPerSecond: 0, direct: direct)
+        let state = TransferState(fileName: item.name, total: total, transferred: 0,
+                                  bytesPerSecond: 0, direct: direct)
+        session.transfers.append(state)
         let start = Date()
         let poller = Task { @MainActor in
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 800_000_000)
                 if Task.isCancelled { break }
-                let size = await destBackend.fileSize(destPath) ?? session.transfer?.transferred ?? 0
+                guard let idx = session.transfers.lastIndex(where: { $0.status == .inProgress }) else { break }
+                let size = await destBackend.fileSize(destPath) ?? session.transfers[idx].transferred
                 let elapsed = max(0.001, Date().timeIntervalSince(start))
-                if var t = session.transfer {
-                    t.transferred = size
-                    t.bytesPerSecond = Double(size) / elapsed
-                    session.transfer = t
+                session.transfers[idx].transferred = size
+                session.transfers[idx].bytesPerSecond = Double(size) / elapsed
+            }
+        }
+        do {
+            try await op()
+            await onFinish()
+            // Mark as completed (fill transferred if known).
+            if let idx = session.transfers.lastIndex(where: { $0.status == .inProgress }) {
+                if session.transfers[idx].total > 0 {
+                    session.transfers[idx].transferred = session.transfers[idx].total
+                }
+                session.transfers[idx].status = .completed
+            }
+        } catch {
+            if Task.isCancelled {
+                if let idx = session.transfers.lastIndex(where: { $0.status == .inProgress }) {
+                    session.transfers[idx].status = .cancelled
+                }
+            } else {
+                let msg = (error as? FileOpError)?.message ?? error.localizedDescription
+                onError(msg)
+                if let idx = session.transfers.lastIndex(where: { $0.status == .inProgress }) {
+                    session.transfers[idx].status = .failed(msg)
                 }
             }
         }
-        do { try await op(); await onFinish() }
-        catch {
-            // A user cancel terminates the process (non-zero) — don't show it as an error.
-            if !Task.isCancelled { onError((error as? FileOpError)?.message ?? error.localizedDescription) }
-        }
         poller.cancel()
-        session.transfer = nil
     }
 
     /// Best-effort octal default for the permissions dialog from "rwxr-xr-x".
@@ -348,6 +358,90 @@ struct SFTPView: View {
             digits += "\(v)"
         }
         return digits
+    }
+}
+
+// MARK: - Transfer row
+
+/// A single row in the transfer-progress list at the bottom of SFTPView.
+private struct TransferRow: View {
+    let state: TransferState
+    let byteString: (Int64) -> String
+    let onCancel: () -> Void
+    let onDelete: () -> Void
+
+    var body: some View {
+        let fraction = state.total > 0
+            ? min(1, Double(state.transferred) / Double(state.total))
+            : 0
+        HStack(spacing: 6) {
+            // File name
+            Text(state.fileName)
+                .font(.caption)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .frame(maxWidth: 160, alignment: .leading)
+
+            Spacer(minLength: 4)
+
+            // Status + progress
+            switch state.status {
+            case .inProgress:
+                if state.total > 0 {
+                    ProgressView(value: fraction)
+                        .progressViewStyle(.linear)
+                        .frame(width: 80)
+                } else {
+                    ProgressView().scaleEffect(x: 0.8, y: 0.5, anchor: .leading)
+                        .frame(width: 60)
+                }
+            case .completed:
+                Text("Done").font(.caption2).foregroundStyle(.green)
+            case .failed:
+                Text("Failed").font(.caption2).foregroundStyle(.red)
+            case .cancelled:
+                Text("Cancelled").font(.caption2).foregroundStyle(.secondaryText)
+            }
+
+            // Size / speed
+            if state.total > 0 || state.status == .inProgress {
+                Text(state.status == .inProgress
+                     ? byteString(state.transferred)
+                     : "\(byteString(state.transferred)) / \(byteString(state.total))")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.secondaryText)
+                    .frame(minWidth: 60, alignment: .trailing)
+            }
+
+            // Speed (only in-progress)
+            if state.status == .inProgress, state.bytesPerSecond > 0 {
+                Text("\(byteString(Int64(state.bytesPerSecond)))/s")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.tertiaryText)
+                    .frame(width: 64, alignment: .trailing)
+            }
+
+            // Action
+            switch state.status {
+            case .inProgress:
+                Button("Cancel", action: onCancel)
+                    .controlSize(.small)
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.red)
+                    .font(.caption)
+            case .completed, .failed, .cancelled:
+                Button(action: onDelete) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.caption)
+                }
+                .controlSize(.small)
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondaryText)
+            }
+        }
+        .padding(.vertical, 2)
+        .padding(.horizontal, 8)
+        .background(state.status == .inProgress ? Color.blue.opacity(0.03) : Color.clear)
     }
 }
 

@@ -45,13 +45,19 @@ struct VaultsFocusModeView: View {
                     help: "Split view (⌘⇧M)",
                     active: false
                 ) { tabs.toggleFocusMode() }
-                // Broadcast input to all panes. Green when active; rows then
-                // show on/off indicators (display only).
+                // Broadcast input to the selected pane. Tapping adds or removes
+                // the selected pane from the broadcast target set; each row also
+                // shows its own toggle.
                 headerAction(
                     icon: "dot.radiowaves.left.and.right",
-                    help: tab.broadcasting ? "Broadcasting input to all panes" : "Broadcast input to all panes",
-                    active: tab.broadcasting
-                ) { tab.broadcasting.toggle() }
+                    help: selected.map { tabs.isPaneBroadcastTarget($0) == true
+                        ? "Stop broadcasting to this pane"
+                        : "Broadcast input to this pane"
+                    } ?? "Broadcast input",
+                    active: selected.map { tabs.isPaneBroadcastTarget($0) } ?? false
+                ) {
+                    if let s = selected { tabs.togglePaneBroadcast(surface: s) }
+                }
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
@@ -65,10 +71,11 @@ struct VaultsFocusModeView: View {
                             surfaceView: pane,
                             overrideTitle: tabs.paneTitleOverride(for: pane.id),
                             isSelected: selected?.id == pane.id,
-                            broadcasting: tab.broadcasting,
+                            isBroadcastTarget: tabs.isPaneBroadcastTarget(pane),
                             onSelect: { tabs.selectFocusModePane(pane) },
                             onDuplicate: { tabs.duplicatePane(surface: pane) },
-                            onClose: { tabs.requestClosePane(surface: pane) }
+                            onClose: { tabs.requestClosePane(surface: pane) },
+                            onToggleBroadcast: { tabs.togglePaneBroadcast(surface: pane) }
                         )
                     }
                 }
@@ -276,11 +283,12 @@ private struct FocusSidebarRow: View {
     /// A fixed display name (e.g. a duplicated pane inherits the source's name).
     let overrideTitle: String?
     let isSelected: Bool
-    /// Whether the tab is broadcasting (drives the per-pane indicator).
-    let broadcasting: Bool
+    /// Whether this pane is a broadcast target.
+    let isBroadcastTarget: Bool
     let onSelect: () -> Void
     let onDuplicate: () -> Void
     let onClose: () -> Void
+    let onToggleBroadcast: () -> Void
 
     @State private var hovering = false
 
@@ -316,14 +324,19 @@ private struct FocusSidebarRow: View {
                 .foregroundStyle(.secondaryText)
                 .help("Close")
             }
-            if broadcasting {
-                // Display-only icon indicator: the selected pane is the
-                // broadcast source (dimmed); every other pane receives (green).
+            // Per-pane broadcast toggle. Shows filled green when this pane
+            // is a broadcast target; click toggles it independently.
+            Button(action: onToggleBroadcast) {
                 Image(systemName: "dot.radiowaves.left.and.right")
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(isSelected ? Color.secondary.opacity(0.5) : Color.green)
-                    .help(isSelected ? "Broadcast source (input typed here)" : "Receives broadcast input")
+                    .foregroundStyle(isBroadcastTarget ? Color.green : Color.secondary.opacity(0.4))
+                    .frame(width: 18, height: 18)
+                    .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .help(isBroadcastTarget
+                  ? "Stop broadcasting to this pane"
+                  : "Broadcast input to this pane")
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)

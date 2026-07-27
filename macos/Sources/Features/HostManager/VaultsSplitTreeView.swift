@@ -10,8 +10,8 @@ struct VaultsSplitTreeView: View {
     let tree: SplitTree<Ghostty.SurfaceView>
     /// Surface IDs whose pane should present the chooser instead of the shell.
     let awaiting: Set<UUID>
-    /// Whether the tab is broadcasting input to all panes (header indicator).
-    let broadcasting: Bool
+    /// The set of pane surface IDs that receive broadcast input.
+    let broadcastTargets: Set<UUID>
     /// The currently focused surface's id — drives the solid/dotted pane border.
     let focusedID: UUID?
     let onResolve: (Ghostty.SurfaceView, PaletteAction) -> Void
@@ -26,7 +26,7 @@ struct VaultsSplitTreeView: View {
                 node: node,
                 isRoot: node == tree.root,
                 multiPane: multiPane,
-                broadcasting: broadcasting,
+                broadcastTargets: broadcastTargets,
                 focusedID: focusedID,
                 awaiting: awaiting,
                 onResolve: onResolve,
@@ -44,7 +44,7 @@ private struct VaultsSplitSubtreeView: View {
     let node: SplitTree<Ghostty.SurfaceView>.Node
     var isRoot: Bool = false
     let multiPane: Bool
-    let broadcasting: Bool
+    let broadcastTargets: Set<UUID>
     let focusedID: UUID?
     let awaiting: Set<UUID>
     let onResolve: (Ghostty.SurfaceView, PaletteAction) -> Void
@@ -58,7 +58,7 @@ private struct VaultsSplitSubtreeView: View {
                 surfaceView: leafView,
                 isSplit: !isRoot,
                 showHeader: multiPane,
-                broadcasting: broadcasting,
+                broadcastTargets: broadcastTargets,
                 isFocused: multiPane ? (focusedID == leafView.id) : false,
                 awaiting: awaiting.contains(leafView.id),
                 onResolve: onResolve,
@@ -78,10 +78,10 @@ private struct VaultsSplitSubtreeView: View {
                 dividerColor: ghostty.config.splitDividerColor,
                 resizeIncrements: .init(width: 1, height: 1),
                 left: {
-                    VaultsSplitSubtreeView(node: split.left, multiPane: multiPane, broadcasting: broadcasting, focusedID: focusedID, awaiting: awaiting, onResolve: onResolve, onDismiss: onDismiss, action: action)
+                    VaultsSplitSubtreeView(node: split.left, multiPane: multiPane, broadcastTargets: broadcastTargets, focusedID: focusedID, awaiting: awaiting, onResolve: onResolve, onDismiss: onDismiss, action: action)
                 },
                 right: {
-                    VaultsSplitSubtreeView(node: split.right, multiPane: multiPane, broadcasting: broadcasting, focusedID: focusedID, awaiting: awaiting, onResolve: onResolve, onDismiss: onDismiss, action: action)
+                    VaultsSplitSubtreeView(node: split.right, multiPane: multiPane, broadcastTargets: broadcastTargets, focusedID: focusedID, awaiting: awaiting, onResolve: onResolve, onDismiss: onDismiss, action: action)
                 },
                 onEqualize: {
                     guard let surface = node.leftmostLeaf().surface else { return }
@@ -98,8 +98,8 @@ private struct VaultsSplitLeaf: View {
     let isSplit: Bool
     /// Show the per-pane header (only when the tab has more than one pane).
     let showHeader: Bool
-    /// Whether the tab is broadcasting input (drives the header icon state).
-    let broadcasting: Bool
+    /// Set of broadcast target pane IDs (drives each pane's header icon).
+    let broadcastTargets: Set<UUID>
     /// Focused pane → solid border; unfocused → dotted. Only meaningful when
     /// the tab has multiple panes (single-pane tabs get no border).
     let isFocused: Bool
@@ -254,11 +254,14 @@ private struct VaultsSplitLeaf: View {
                     isDragging: $headerDragging,
                     isHovering: $headerHovering)
             )
+            let isTarget = broadcastTargets.contains(surfaceView.id)
             headerButton(
                 "dot.radiowaves.left.and.right",
-                help: broadcasting ? "Stop broadcasting input" : "Broadcast input to all panes",
-                active: broadcasting
-            ) { VaultsTabsModel.shared.toggleBroadcast(surface: surfaceView) }
+                help: isTarget
+                    ? "Stop broadcasting to this pane"
+                    : "Broadcast input to this pane",
+                active: isTarget
+            ) { VaultsTabsModel.shared.togglePaneBroadcast(surface: surfaceView) }
             headerButton("sidebar.left", help: "Focus mode (⌘⇧M)") {
                 VaultsTabsModel.shared.toggleFocusMode()
             }

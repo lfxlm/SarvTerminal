@@ -94,9 +94,12 @@ final class VaultsTabsModel: ObservableObject {
         /// The saved session this tab was opened from or saved as — lets a
         /// linked session rename propagate to its open tab. In-memory only.
         var sessionID: UUID?
-        /// When true, input typed in the focused pane is mirrored to every
-        /// other pane in the tab.
-        @Published var broadcasting: Bool = false
+        /// Surface IDs of panes that receive broadcast input. Non-empty means
+        /// broadcasting is active; input typed in the source pane will be
+        /// mirrored to every pane in this set (minus the source itself).
+        @Published var broadcastTargets: Set<UUID> = []
+        /// Convenience: `true` when at least one pane is a broadcast target.
+        var isBroadcasting: Bool { !broadcastTargets.isEmpty }
         /// Sidebar display-name overrides per pane. A duplicated pane gets the
         /// source pane's name here so it doesn't show a bare "~" before its
         /// shell sets a title.
@@ -451,13 +454,16 @@ final class VaultsTabsModel: ObservableObject {
         return terminals.last
     }
 
-    /// Panes a command targets: EVERY broadcast-eligible pane when the tab is
-    /// broadcasting, otherwise just the focused pane (fallback: first leaf).
+    /// Panes a command targets: broadcast targets when the tab is
+    /// broadcasting (fallback to all leaves if no targets match), otherwise
+    /// just the focused pane (fallback: first leaf).
     private func commandTargetPanes(in tab: TerminalTab) -> [Ghostty.SurfaceView] {
         let leaves = tab.surfaceTree.root?.leaves() ?? []
-        if tab.broadcasting {
-            let eligible = leaves.filter { paneAcceptsBroadcast($0) }
-            return eligible.isEmpty ? leaves : eligible
+        if tab.isBroadcasting {
+            let targets = leaves.filter {
+                tab.broadcastTargets.contains($0.id) && paneAcceptsBroadcast($0)
+            }
+            return targets.isEmpty ? leaves : targets
         }
         if let focused = tab.focusedSurface, leaves.contains(where: { $0 === focused }) {
             return [focused]
@@ -1433,35 +1439,50 @@ final class VaultsTabsModel: ObservableObject {
         Ghostty.moveFocus(to: surface)
     }
 
-    /// Toggle input broadcasting for the pane's tab.
-    func toggleBroadcast(surface: Ghostty.SurfaceView) {
-        tab(containing: surface)?.broadcasting.toggle()
+    /// Add or remove the pane from its tab's broadcast target set.
+    func togglePaneBroadcast(surface: Ghostty.SurfaceView) {
+        guard let tab = tab(containing: surface) else { return }
+        if tab.broadcastTargets.contains(surface.id) {
+            tab.broadcastTargets.remove(surface.id)
+        } else {
+            tab.broadcastTargets.insert(surface.id)
+        }
     }
 
-    func isBroadcasting(surface: Ghostty.SurfaceView) -> Bool {
-        tab(containing: surface)?.broadcasting ?? false
+    /// Whether the given pane is a broadcast target in its tab.
+    func isPaneBroadcastTarget(_ pane: Ghostty.SurfaceView) -> Bool {
+        tab(containing: pane)?.broadcastTargets.contains(pane.id) ?? false
     }
 
-    /// When the active tab is broadcasting, send `event` to every OTHER pane
+    /// When the active tab is broadcasting, send `event` to every target pane
     /// (not the one that natively handles it). The focused pane keeps its
     /// native key handling — including IME, backspace, and ⌘K — so we DON'T
-    /// consume the event. The other panes get the key via the core
+    /// consume the event. The target panes get the key via the core
     /// (`ghostty_surface_key`), bypassing the NSView/IME pipeline that caused
-    /// the doubled input. No-op (and irrelevant) when not broadcasting or the
-    /// tab has a single pane.
+    /// the doubled input. Only broadcasts when the source pane (where the user
+    /// is typing) is itself in `broadcastTargets` — typing in a non-target pane
+    /// does not broadcast even when the set is non-empty.
     func broadcastKeyEvent(_ event: NSEvent) {
-        guard let tab = activeTerminal, tab.broadcasting else { return }
+        guard let tab = activeTerminal, tab.isBroadcasting else { return }
         let panes = tab.surfaceTree.root?.leaves() ?? []
         guard panes.count > 1 else { return }
 
         // The pane that will handle this event natively (the first responder).
         let responder = event.window?.firstResponder as? NSView
-        let source = panes.first { pane in
+        guard let source = panes.first(where: { pane in
             guard let responder else { return false }
             return responder === pane || responder.isDescendant(of: pane)
-        }
+        }) else { return }
 
-        for pane in panes where pane !== source && paneAcceptsBroadcast(pane) {
+        // Only broadcast when the source pane itself is a broadcast target;
+        // typing in a non-target pane should not forward input.
+        guard tab.broadcastTargets.contains(source.id) else { return }
+
+        for pane in panes
+            where pane !== source
+            && tab.broadcastTargets.contains(pane.id)
+            && paneAcceptsBroadcast(pane)
+        {
             guard let surface = pane.surface else { continue }
             sendKeyToCore(event, surface: surface)
         }
@@ -2099,13 +2120,19 @@ final class VaultsTabsModel: ObservableObject {
 
         // Per-display font weight: each surface posts when its backing scale
         // changes (creation + moving to another screen), and the setting toggle
-        // re-applies to all.
+        // re-applies to all.  Deferred via `async` because this observer fires
+        // synchronously inside `NSView addSubview:` → `viewDidChangeBackingProperties`
+        // during the AppKit layout pass — calling `ghostty_surface_update_config`
+        // inline can block the main thread if the IO thread's blocking queue is
+        // full, causing a visible hang (rdar-/spindump-level stall).
         observe(.sarvSurfaceBackingChanged) { [weak self] note in
             guard let pane = note.object as? Ghostty.SurfaceView else { return }
-            self?.applyFontWeight(to: pane)
-            // Fires at surface creation too — new panes need the readability
-            // pass when a shared background image is showing.
-            self?.applySmartThemeIfNeeded(to: pane)
+            DispatchQueue.main.async {
+                self?.applyFontWeight(to: pane)
+                // Fires at surface creation too — new panes need the readability
+                // pass when a shared background image is showing.
+                self?.applySmartThemeIfNeeded(to: pane)
+            }
         }
         observe(.sarvAutoFontWeightChanged) { [weak self] _ in self?.applyFontWeightForDisplay() }
     }

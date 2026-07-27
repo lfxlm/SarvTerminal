@@ -238,7 +238,7 @@ private struct VaultsTerminalPane: View {
         VaultsSplitTreeView(
             tree: tab.surfaceTree,
             awaiting: awaiting,
-            broadcasting: tab.broadcasting,
+            broadcastTargets: tab.broadcastTargets,
             focusedID: lastFocusedSurface?.value?.id,
             onResolve: { surface, action in VaultsTabsModel.shared.resolveChoice(surface: surface, action: action) },
             onDismiss: { surface in VaultsTabsModel.shared.closePaneSkippingConfirm(surface: surface) },

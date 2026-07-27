@@ -4,6 +4,79 @@ import UserNotifications
 import OSLog
 import Sparkle
 import GhosttyKit
+import Darwin
+
+/// Installs signal handlers + ObjC exception handler so the app writes a
+/// crash log to ~/Library/Logs/SarvTerminalCrash.log even when the system
+/// crash reporter doesn't capture one (SIGKILL, SwiftUI background dealloc, etc).
+/// Signal handler is async-signal-safe: uses backtrace/write directly.
+private func installCrashHandlers() {
+    // ObjC/Swift exceptions
+    NSSetUncaughtExceptionHandler { exception in
+        let callStack = exception.callStackSymbols.joined(separator: "\n")
+        let msg = """
+        === ObjC/Swift Exception ===
+        Name: \(exception.name.rawValue)
+        Reason: \(exception.reason ?? "")
+        Stack:\n\(callStack)
+
+"""
+        if let f = fopen(CRASH_LOG_PATH, "a") {
+            fwrite(msg, 1, msg.utf8.count, f)
+            fclose(f)
+        }
+    }
+
+    // Unix signals
+    let sigs: [Int32] = [SIGABRT, SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGTRAP]
+    var sa = sigaction()
+    sigemptyset(&sa.sa_mask)
+    sa.sa_flags = SA_SIGINFO | SA_NODEFER
+    // Swift exposes the C union __sigaction_u; we need __sa_sigaction for SA_SIGINFO.
+    // The closure type is (Int32, UnsafeMutablePointer<__siginfo>?, UnsafeMutableRawPointer?) -> Void
+    sa.__sigaction_u.__sa_sigaction = { _, siginfo, _ in
+        let fd = open(CRASH_LOG_PATH, O_WRONLY | O_CREAT | O_APPEND, 0o644)
+        guard fd >= 0 else { return }
+        let sig = siginfo?.pointee.si_signo ?? 0
+        let signalName: String
+        switch sig {
+        case SIGABRT: signalName = "SIGABRT"
+        case SIGSEGV: signalName = "SIGSEGV"
+        case SIGBUS:  signalName = "SIGBUS"
+        case SIGILL:  signalName = "SIGILL"
+        case SIGFPE:  signalName = "SIGFPE"
+        case SIGTRAP: signalName = "SIGTRAP"
+        default:      signalName = "\(sig)"
+        }
+        let addr = siginfo?.pointee.si_addr
+        let header = "=== Signal \(signalName) at \(addr ?? nil) ===\nBacktrace:\n"
+        _ = write(fd, header, header.utf8.count)
+        var bt = [UnsafeMutableRawPointer?](repeating: nil, count: 128)
+        let count = backtrace(&bt, 32)
+        backtrace_symbols_fd(bt, count, fd)
+        _ = write(fd, "\n", 1)
+        close(fd)
+        // Re-raise with default handler so the system still knows we crashed
+        signal(sig, SIG_DFL)
+        raise(sig)
+    }
+    for sig in sigs { sigaction(sig, &sa, nil) }
+}
+
+private let CRASH_LOG_PATH = "/tmp/SarvTerminalCrash.log"
+private let TRACE_PATH = "/tmp/SarvTerminalTrace.log"
+
+/// Write a trace point to a file (async-signal-safe).
+/// The last entry before a crash tells us where it happened.
+func crashTrace(_ msg: String) {
+    let ts = "[\(Date().timeIntervalSince1970)] "
+    let line = ts + msg + "\n"
+    if let f = fopen(TRACE_PATH, "a") {
+        fwrite(line, 1, line.utf8.count, f)
+        fflush(f)
+        fclose(f)
+    }
+}
 
 class AppDelegate: NSObject,
                     ObservableObject,
@@ -239,7 +312,9 @@ class AppDelegate: NSObject,
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // System settings overrides
+        // Install crash handlers so we can capture stack traces
+        installCrashHandlers()
+        crashTrace("=== APP START ===")
         UserDefaults.ghostty.register(defaults: [
             // Disable this so that repeated key events make it through to our terminal views.
             "ApplePressAndHoldEnabled": false,

@@ -451,9 +451,15 @@ extension Ghostty {
             let center = NotificationCenter.default
             center.removeObserver(self)
 
-            // Remove our event monitor
+            // Remove our event monitor. NSEvent.removeMonitor MUST be called
+            // on the main thread per Apple docs. SwiftUI may release StateObject
+            // (and thus deinit this NSView) on any thread, so we dispatch.
             if let eventMonitor {
-                NSEvent.removeMonitor(eventMonitor)
+                if Thread.isMainThread {
+                    NSEvent.removeMonitor(eventMonitor)
+                } else {
+                    DispatchQueue.main.async { NSEvent.removeMonitor(eventMonitor) }
+                }
             }
 
             // Whenever the surface is removed, we need to note that our restorable

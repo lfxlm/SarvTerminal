@@ -143,11 +143,15 @@ final class HostSearchController: NSWindowController, NSWindowDelegate {
                 return nil
             case 36, 76: // Return / Keypad Enter
                 if let row = self.model.confirmSelection() {
-                    self.run(row.action)
+                    // Dispatch async so hide() doesn't remove the key monitor
+                    // from inside its own callback — Apple docs warn against this.
+                    DispatchQueue.main.async { self.run(row.action) }
                 }
                 return nil
             case 53: // Esc
-                self.hide()
+                // Dispatch async so hide() doesn't remove the key monitor
+                // from inside its own callback — Apple docs warn against this.
+                DispatchQueue.main.async { self.hide() }
                 return nil
             case 51: // Delete / Backspace
                 DispatchQueue.main.async {
@@ -188,11 +192,13 @@ final class HostSearchController: NSWindowController, NSWindowDelegate {
         removeOutsideClickMonitors()
         outsideClickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
             guard let self, let panel = self.window, panel.isVisible else { return event }
-            if event.window !== panel { self.hide() }
+            // Dispatch async so hide() doesn't remove the outside-click
+            // monitor from inside its own callback — Apple docs warn against this.
+            if event.window !== panel { DispatchQueue.main.async { self.hide() } }
             return event
         }
         globalClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
-            self?.hide()
+            DispatchQueue.main.async { self?.hide() }
         }
     }
 
@@ -211,6 +217,7 @@ final class HostSearchController: NSWindowController, NSWindowDelegate {
 
     /// Dispatch the confirmed palette row to a new embedded terminal tab.
     private func run(_ action: PaletteAction) {
+        crashTrace("HostSearchController.run called")
         hide()
         switch action {
         case .host(let host):

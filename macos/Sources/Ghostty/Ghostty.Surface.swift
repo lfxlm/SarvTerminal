@@ -31,8 +31,12 @@ extension Ghostty {
             // We can't wait for the task to succeed so this will happen sometime
             // but that's okay.
             let surface = self.surface
-            Task.detached { @MainActor in
+            if Thread.isMainThread {
                 ghostty_surface_free(surface)
+            } else {
+                Task.detached { @MainActor in
+                    ghostty_surface_free(surface)
+                }
             }
         }
 

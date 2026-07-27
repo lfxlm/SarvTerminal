@@ -606,7 +606,8 @@ final class VaultsTabsModel: ObservableObject {
     /// Stop and forget the connection bound to `surfaceID` (if any), cleaning up
     /// its poll timer and password temp file.
     private func teardownConnection(surfaceID: UUID) {
-        guard let conn = connections[surfaceID] else { return }
+        crashTrace("teardownConnection \(surfaceID)")
+        guard let conn = connections[surfaceID] else { crashTrace("teardownConnection: no connection"); return }
         conn.controller.stop()
         deleteTempFile(conn.model.passwordFilePath)
         deleteTempFile(conn.model.jumpPasswordFilePath)
@@ -640,6 +641,7 @@ final class VaultsTabsModel: ObservableObject {
         staged: Bool = false,
         workingDirectory: String? = nil
     ) -> TerminalTab? {
+        crashTrace("newTerminal called staged=\(staged) command=\(command ?? "nil")")
         guard let app = (NSApp.delegate as? AppDelegate)?.ghostty.app else { return nil }
 
         // Staged SSH connect: run ssh directly with the password fed via askpass
@@ -804,22 +806,29 @@ final class VaultsTabsModel: ObservableObject {
     }
 
     private func startSSHConnection(app: ghostty_app_t, command: String, name: String, host: SavedHost?) -> TerminalTab? {
+        crashTrace("startSSHConnection")
         let needsPassword = sshNeedsPassword(host)
         // Always start over a blank placeholder surface; ssh is spawned only
         // after the pre-flight host-key check (and password step) resolve.
         let surface = Ghostty.SurfaceView(app)
+        crashTrace("startSSHConnection: SurfaceView created")
         let tab = TerminalTab(surface: surface, name: uniqueTabName(base: host?.label ?? name))
+        crashTrace("startSSHConnection: TerminalTab created")
         tab.launchCommand = command
         tab.connectHost = host
         terminals.append(tab)
+        crashTrace("startSSHConnection: terminals appended")
         selection = .terminal(tab.id)
         HostManagerController.shared.show()
+        crashTrace("startSSHConnection: HostManagerController.showed")
 
         let model = SSHConnectionModel(title: host?.label ?? name, host: host, needsPassword: needsPassword)
         let controller = SSHConnectionController(model: model, surfaceView: surface, tabsModel: self)
         connections[surface.id] = ActiveConnection(model: model, controller: controller, command: command)
+        crashTrace("startSSHConnection: connection registered")
 
         Task { @MainActor in await runHostKeyPreflight(model: model) }
+        crashTrace("startSSHConnection: returning")
         return tab
     }
 
@@ -860,12 +869,14 @@ final class VaultsTabsModel: ObservableObject {
     /// split tree (so splits survive), restarts the controller, and re-keys the
     /// connection to the new surface. Backs password submit and Reconnect.
     func launchSSHConnection(for model: SSHConnectionModel, password: String) {
+        crashTrace("launchSSHConnection")
         guard let oldID = surfaceID(for: model),
               let conn = connections[oldID],
               let oldSurface = surface(withID: oldID),
               let tab = tab(containing: oldSurface),
               let node = tab.surfaceTree.root?.node(view: oldSurface),
-              let app = (NSApp.delegate as? AppDelegate)?.ghostty.app else { return }
+              let app = (NSApp.delegate as? AppDelegate)?.ghostty.app else { crashTrace("launchSSHConnection: guard failed"); return }
+        crashTrace("launchSSHConnection: guards passed")
         deleteTempFile(model.passwordFilePath)   // discard the previous attempt's password file
         deleteTempFile(model.jumpPasswordFilePath)
         // Rebuild the command from the LATEST saved host (the user may have just
@@ -875,6 +886,7 @@ final class VaultsTabsModel: ObservableObject {
         let made = makeSSHSurface(app: app, command: command, password: password,
                                   termOverride: latestHost?.termOverride ?? "",
                                   host: latestHost)
+        crashTrace("launchSSHConnection: makeSSHSurface done")
         applyHostTheme(model.host, to: made.surface)
         // Replace only this pane's node — works whether it's the whole tab or one
         // pane of a split.
@@ -891,16 +903,20 @@ final class VaultsTabsModel: ObservableObject {
         } else if let host = model.host {
             tab.paneTitleOverrides[made.surface.id] = host.displayLabel
         }
+        crashTrace("launchSSHConnection: title transfer done")
         model.passwordFilePath = made.passwordFile
         model.jumpPasswordFilePath = made.jumpPasswordFile
         model.silent = true            // attempting with a known password — no field while connecting
         model.stage = .connecting
         conn.controller.stop()
+        crashTrace("launchSSHConnection: controller stopped")
         let controller = SSHConnectionController(model: model, surfaceView: made.surface, tabsModel: self)
         // Re-key the connection to the new surface (with the refreshed command).
         connections[oldID] = nil
         connections[made.surface.id] = ActiveConnection(model: model, controller: controller, command: command)
+        crashTrace("launchSSHConnection: connections rekeyed")
         controller.start()
+        crashTrace("launchSSHConnection: controller started")
     }
 
     /// Open the host editor for this connection's host (popup "Edit host") as a
@@ -1064,9 +1080,10 @@ final class VaultsTabsModel: ObservableObject {
     /// The popup shows over this pane; on connect the live terminal replaces it
     /// in place, and the per-surface connection registry handles the rest.
     func connectSavedHostInPane(host: SavedHost, surface: Ghostty.SurfaceView) {
+        crashTrace("connectSavedHostInPane \(host.displayLabel)")
         guard let tab = tab(containing: surface),
               let node = tab.surfaceTree.root?.node(view: surface),
-              let app = (NSApp.delegate as? AppDelegate)?.ghostty.app else { return }
+              let app = (NSApp.delegate as? AppDelegate)?.ghostty.app else { crashTrace("connectSavedHostInPane: guard failed"); return }
         let command = host.sshCommand(staged: true)
         let needsPassword = sshNeedsPassword(host)
         let knownPassword = host.password.isEmpty ? nil : host.password
@@ -1209,7 +1226,10 @@ final class VaultsTabsModel: ObservableObject {
         // moved surface keeps its own live title (for an SSH tab that's the
         // ghost default), so without this the pane header would drop the tab's
         // name (e.g. "Local SSH 3333") and show a bare ghost.
-        destTab.paneTitleOverrides[draggedSurface.id] = srcTab.displayName
+        // Use the paneTitleOverride if there is one (SSH host label), otherwise
+        // fall back to the tab's display name.
+        let override = srcTab.paneTitleOverrides[draggedSurface.id] ?? srcTab.displayName
+        destTab.paneTitleOverrides[draggedSurface.id] = override
         // The surface moves into the split. Its SSH connection (popup) follows
         // automatically — it's keyed by surface id, not by tab — so an in-flight
         // password prompt / connecting state keeps showing over the new pane.
@@ -1224,6 +1244,7 @@ final class VaultsTabsModel: ObservableObject {
     /// running terminal. Every other pane close must go through
     /// `requestClosePane` so the confirmation can't be skipped by accident.
     func closePaneSkippingConfirm(surface: Ghostty.SurfaceView) {
+        crashTrace("closePaneSkippingConfirm")
         performClosePane(surface: surface)
     }
 
@@ -1339,11 +1360,19 @@ final class VaultsTabsModel: ObservableObject {
         // tab name) when it has one; otherwise the standard deduped "Terminal"
         // — never the live shell title, which flips between "~" and
         // "user@host:cwd" on every prompt and reads as broken.
-        let name = uniqueTabName(base: tab.paneTitleOverrides[surfaceID] ?? "Terminal")
+        // Capture the override before clearing it so it can be transferred to
+        // the new tab (a subsequent drag back into a split must find it).
+        let paneOverride = tab.paneTitleOverrides[surfaceID]
+        let name = uniqueTabName(base: paneOverride ?? "Terminal")
         tab.paneTitleOverrides[surfaceID] = nil
         tab.surfaceTree = tab.surfaceTree.removing(node)
 
         let newTab = TerminalTab(tree: .init(view: surface), name: name)
+        // Preserve the pane title override on the new tab so the SSH host label
+        // (or any sticky name) survives a subsequent drag back into a split.
+        if let paneOverride {
+            newTab.paneTitleOverrides[surfaceID] = paneOverride
+        }
         withAnimation(.smooth(duration: 0.22)) {
             if let targetTabID, let idx = terminals.firstIndex(where: { $0.id == targetTabID }) {
                 terminals.insert(newTab, at: idx)
@@ -1388,6 +1417,12 @@ final class VaultsTabsModel: ObservableObject {
         case .right: .right
         }
         guard let newTree = try? destTab.surfaceTree.inserting(view: surface, at: destinationSurface, direction: direction) else { return }
+        // Transfer the pane title override from the source tab to the destination
+        // tab so an SSH host label (or any sticky name) keeps showing on the pane
+        // header after the tab chip is dropped into a split pane.
+        if let override = sourceTab.paneTitleOverrides.removeValue(forKey: surface.id) {
+            destTab.paneTitleOverrides[surface.id] = override
+        }
         // Remove the source tab WITHOUT freeing the surface — it now lives in the
         // destination tab's tree. Its SSH connection (popup) follows the surface
         // automatically (keyed by surface id), so an in-flight password prompt or
@@ -1679,7 +1714,8 @@ final class VaultsTabsModel: ObservableObject {
     /// design: external callers must go through `requestCloseTerminal` so the
     /// running-process confirmation can never be bypassed.
     private func performCloseTerminal(_ id: UUID) {
-        guard let idx = terminals.firstIndex(where: { $0.id == id }) else { return }
+        crashTrace("performCloseTerminal \(id)")
+        guard let idx = terminals.firstIndex(where: { $0.id == id }) else { crashTrace("performCloseTerminal: tab not found"); return }
         recordAndRelease(terminals[idx], at: idx)
         terminals.remove(at: idx)
         // No tabs left → nothing to show in the all-tabs overview. Done here (not

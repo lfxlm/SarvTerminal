@@ -637,6 +637,25 @@ enum LocalizedKey: String, CaseIterable {
     case imp_wezterm_desc
     case imp_iterm2_name
     case imp_iterm2_desc
+
+    // ── Split chooser / command palette ────────
+    case sp_open_in_split
+    case sp_pick_hint
+    case sp_search_placeholder
+    case sp_drag_tip
+    case sp_dismiss
+    case pal_connect_via_ssh
+    case pal_local_terminal
+    case pal_serial
+    case pal_toggle_scratchpad
+    case pal_scratchpad_subtitle
+    case pal_section_quick_connect
+    case pal_section_hosts
+    case pal_search_placeholder
+    case pal_footer_hint
+    case pal_hint_navigate
+    case pal_hint_open
+    case pal_hint_cancel
 }
 
 // MARK: - Localized dictionary
@@ -1275,6 +1294,25 @@ private let enStrings: [LocalizedKey: String] = [
     .imp_wezterm_desc: "Best-effort scrape of a Lua config (colors, font, keybinds).",
     .imp_iterm2_name: "iTerm2",
     .imp_iterm2_desc: "Colors from an exported .itermcolors file.",
+
+    // ── Split chooser / command palette ────────
+    .sp_open_in_split: "Open in this split",
+    .sp_pick_hint: "Pick a host, quick-connect, or use a local terminal",
+    .sp_search_placeholder: "Search hosts or ssh user@host",
+    .sp_drag_tip: "Tip: drag a tab here to open it in this split",
+    .sp_dismiss: "Dismiss",
+    .pal_connect_via_ssh: "Connect via SSH",
+    .pal_local_terminal: "Local Terminal",
+    .pal_serial: "Serial",
+    .pal_toggle_scratchpad: "Toggle Scratchpad",
+    .pal_scratchpad_subtitle: "Stage & send commands",
+    .pal_section_quick_connect: "Quick connect",
+    .pal_section_hosts: "Hosts",
+    .pal_search_placeholder: "Search hosts or tabs",
+    .pal_footer_hint: "Quick connect, or pick a saved host",
+    .pal_hint_navigate: "↑↓ navigate",
+    .pal_hint_open: "⏎ open",
+    .pal_hint_cancel: "Esc cancel",
 ]
 
 // swiftlint:disable:next identifier_name
@@ -1900,4 +1938,23 @@ private let zhStrings: [LocalizedKey: String] = [
     .imp_wezterm_desc: "尽力从 Lua 配置中抓取（颜色、字体、快捷键）。",
     .imp_iterm2_name: "iTerm2",
     .imp_iterm2_desc: "从导出的 .itermcolors 文件中导入颜色。",
+
+    // ── Split chooser / command palette ────────
+    .sp_open_in_split: "在此分屏中打开",
+    .sp_pick_hint: "选择主机、快速连接，或使用本地终端",
+    .sp_search_placeholder: "搜索主机或 ssh user@host",
+    .sp_drag_tip: "提示：把标签页拖到这里可在此分屏中打开",
+    .sp_dismiss: "关闭",
+    .pal_connect_via_ssh: "通过 SSH 连接",
+    .pal_local_terminal: "本地终端",
+    .pal_serial: "串口",
+    .pal_toggle_scratchpad: "切换草稿板",
+    .pal_scratchpad_subtitle: "暂存并发送命令",
+    .pal_section_quick_connect: "快速连接",
+    .pal_section_hosts: "主机",
+    .pal_search_placeholder: "搜索主机或标签页",
+    .pal_footer_hint: "快速连接，或选择已保存的主机",
+    .pal_hint_navigate: "↑↓ 导航",
+    .pal_hint_open: "⏎ 打开",
+    .pal_hint_cancel: "Esc 取消",
 ]

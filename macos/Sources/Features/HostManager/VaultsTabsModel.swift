@@ -1063,15 +1063,31 @@ final class VaultsTabsModel: ObservableObject {
     /// shell immediately (hidden behind the chooser); resolving the choice
     /// either reveals it (Local Terminal) or runs an SSH command in it.
     func splitAwaitingChoice(direction: SplitTree<Ghostty.SurfaceView>.NewDirection) {
-        guard let tab = activeTerminal,
-              let app = (NSApp.delegate as? AppDelegate)?.ghostty.app else { return }
+        guard let tab = activeTerminal else { return }
         let anchor = tab.focusedSurface ?? tab.surfaceTree.root?.leftmostLeaf()
         guard let anchor else { return }
+        insertAwaitingSplit(tab: tab, anchor: anchor, direction: direction)
+    }
+
+    /// Insert a fresh split pane next to `anchor` and show the inline chooser
+    /// over it. Shared by the app split keybinds (`splitAwaitingChoice`) and
+    /// libghostty's `new_split` action (`handleNewSplit` — menu items, the
+    /// pane context menu, config keybinds) so EVERY split entry point lets the
+    /// user pick a saved host / quick connect / local shell.
+    private func insertAwaitingSplit(
+        tab: TerminalTab,
+        anchor: Ghostty.SurfaceView,
+        direction: SplitTree<Ghostty.SurfaceView>.NewDirection,
+        baseConfig: Ghostty.SurfaceConfiguration? = nil
+    ) {
+        guard let app = (NSApp.delegate as? AppDelegate)?.ghostty.app else { return }
         // Inherit the directory of the pane we split from so the new shell opens
         // in the same place (e.g. your project dir), falling back to the new-tab
         // directory — never the app process's cwd (`/` or the config dir).
-        var cfg = Ghostty.SurfaceConfiguration()
-        cfg.workingDirectory = anchor.pwd ?? Self.newTabWorkingDirectory
+        var cfg = baseConfig ?? Ghostty.SurfaceConfiguration()
+        if cfg.workingDirectory == nil {
+            cfg.workingDirectory = anchor.pwd ?? Self.newTabWorkingDirectory
+        }
         let newView = Ghostty.SurfaceView(app, baseConfig: cfg)
         guard let newTree = try? tab.surfaceTree.inserting(view: newView, at: anchor, direction: direction) else { return }
         tab.surfaceTree = newTree
@@ -2292,8 +2308,7 @@ final class VaultsTabsModel: ObservableObject {
 
     private func handleNewSplit(_ note: Notification) {
         guard let src = note.object as? Ghostty.SurfaceView,
-              let tab = tab(containing: src),
-              let app = (NSApp.delegate as? AppDelegate)?.ghostty.app else { return }
+              let tab = tab(containing: src) else { return }
         guard let dirAny = note.userInfo?["direction"],
               let dir = dirAny as? ghostty_action_split_direction_e else { return }
         let direction: SplitTree<Ghostty.SurfaceView>.NewDirection
@@ -2304,11 +2319,11 @@ final class VaultsTabsModel: ObservableObject {
         case GHOSTTY_SPLIT_DIRECTION_UP:    direction = .up
         default: return
         }
+        // Route through the inline chooser (same as the app split keybinds) so
+        // the user picks what the new pane runs — a saved host, quick connect,
+        // or the local shell already spawned behind the chooser.
         let config = note.userInfo?[Ghostty.Notification.NewSurfaceConfigKey] as? Ghostty.SurfaceConfiguration
-        let newView = Ghostty.SurfaceView(app, baseConfig: config)
-        guard let newTree = try? tab.surfaceTree.inserting(view: newView, at: src, direction: direction) else { return }
-        tab.surfaceTree = newTree
-        Ghostty.moveFocus(to: newView, from: src)
+        insertAwaitingSplit(tab: tab, anchor: src, direction: direction, baseConfig: config)
     }
 
     private func handleClose(_ note: Notification) {

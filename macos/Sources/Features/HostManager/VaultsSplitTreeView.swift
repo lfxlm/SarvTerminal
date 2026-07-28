@@ -392,9 +392,9 @@ struct SplitChooserView: View {
                             Image(systemName: "rectangle.split.2x1")
                                 .font(.system(size: 26, weight: .light))
                                 .foregroundStyle(.secondaryText)
-                            Text("Open in this split")
+                            Text(loc(.sp_open_in_split))
                                 .font(.headline)
-                            Text("Pick a host, quick-connect, or use a local terminal")
+                            Text(loc(.sp_pick_hint))
                                 .font(.caption)
                                 .foregroundStyle(.secondaryText)
                         }
@@ -407,11 +407,11 @@ struct SplitChooserView: View {
                             }
                         }
 
-                        Text("Tip: drag a tab here to open it in this split")
+                        Text(loc(.sp_drag_tip))
                             .font(.caption2)
                             .foregroundStyle(.tertiaryText)
 
-                        Button("Dismiss") { onDismiss() }
+                        Button(loc(.sp_dismiss)) { onDismiss() }
                             .buttonStyle(.plain)
                             .foregroundStyle(.secondaryText)
                             .padding(.top, 2)
@@ -466,7 +466,7 @@ struct SplitChooserView: View {
             TextField(
                 "",
                 text: $model.search,
-                prompt: Text("Search hosts or ssh user@host").foregroundColor(.secondaryText)
+                prompt: Text(loc(.sp_search_placeholder)).foregroundColor(.secondaryText)
             )
             .textFieldStyle(.plain)
             .foregroundStyle(.primary)

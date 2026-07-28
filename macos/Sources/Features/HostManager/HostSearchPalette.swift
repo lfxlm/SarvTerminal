@@ -24,6 +24,14 @@ struct PaletteRow: Identifiable, Equatable {
     enum Section: String {
         case quickConnect = "Quick connect"
         case hosts = "Hosts"
+
+        /// Localized header text (rawValue stays stable for identity).
+        var label: String {
+            switch self {
+            case .quickConnect: return loc(.pal_section_quick_connect)
+            case .hosts: return loc(.pal_section_hosts)
+            }
+        }
     }
 
     let id: String
@@ -90,7 +98,7 @@ final class HostSearchModel: ObservableObject {
                 id: "quick-connect",
                 action: .quickConnect(q),
                 title: q,
-                subtitle: "Connect via SSH",
+                subtitle: loc(.pal_connect_via_ssh),
                 systemImage: "bolt.horizontal.circle",
                 trailingText: nil,
                 section: .quickConnect
@@ -99,7 +107,7 @@ final class HostSearchModel: ObservableObject {
         result.append(PaletteRow(
             id: "local-terminal",
             action: .localTerminal,
-            title: "Local Terminal",
+            title: loc(.pal_local_terminal),
             subtitle: nil,
             systemImage: "terminal",
             trailingText: "⌘L",
@@ -108,7 +116,7 @@ final class HostSearchModel: ObservableObject {
         result.append(PaletteRow(
             id: "serial",
             action: .serial,
-            title: "Serial",
+            title: loc(.pal_serial),
             subtitle: nil,
             systemImage: "cable.connector",
             trailingText: nil,
@@ -122,8 +130,8 @@ final class HostSearchModel: ObservableObject {
             result.append(PaletteRow(
                 id: "toggle-scratchpad",
                 action: .toggleScratchpad,
-                title: "Toggle Scratchpad",
-                subtitle: "Stage & send commands",
+                title: loc(.pal_toggle_scratchpad),
+                subtitle: loc(.pal_scratchpad_subtitle),
                 systemImage: "square.and.pencil",
                 trailingText: "⌘⇧E",
                 section: .quickConnect
@@ -219,7 +227,7 @@ struct HostSearchPalette: View {
                 .font(.title3)
                 .foregroundStyle(.secondaryText)
             if model.search.isEmpty {
-                Text("Search hosts or tabs")
+                Text(loc(.pal_search_placeholder))
                     .font(.title3)
                     .foregroundStyle(.secondaryText)
             } else {
@@ -255,7 +263,7 @@ struct HostSearchPalette: View {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(rows.enumerated()), id: \.element.id) { idx, item in
                         if idx == 0 || rows[idx - 1].section != item.section {
-                            sectionHeader(item.section.rawValue)
+                            sectionHeader(item.section.label)
                         }
                         row(item: item, index: idx)
                             .id(item.id)
@@ -336,13 +344,13 @@ struct HostSearchPalette: View {
 
     private var footer: some View {
         HStack {
-            Text("Quick connect, or pick a saved host")
+            Text(loc(.pal_footer_hint))
                 .font(.caption)
                 .foregroundStyle(.secondaryText)
             Spacer()
-            keyHint("↑↓ navigate")
-            keyHint("⏎ open")
-            keyHint("Esc cancel")
+            keyHint(loc(.pal_hint_navigate))
+            keyHint(loc(.pal_hint_open))
+            keyHint(loc(.pal_hint_cancel))
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)

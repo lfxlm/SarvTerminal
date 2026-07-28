@@ -102,7 +102,21 @@ struct VaultsRootView: View {
                     .zIndex(2)
             }
         }
-        .animation(.easeInOut(duration: 0.18), value: tabs.editingHost?.id)
+        // SFTP side panel — full dual-pane file browser for the connected SSH
+        // host. Always mounted once opened so in-progress transfers survive
+        // hide/show (scrim dismiss → reopen). Controlled by offset + opacity
+        // instead of conditional creation.
+        .overlay {
+            if let host = tabs.sftpPanelHost {
+                SftpSidePanelView(host: host, onClose: { tabs.sftpPanelVisible = false })
+                    .offset(x: tabs.sftpPanelVisible ? 0 : 420)
+                    .opacity(tabs.sftpPanelVisible ? 1 : 0)
+                    .allowsHitTesting(tabs.sftpPanelVisible)
+                    .zIndex(2)
+            }
+        }
+        .animation(.easeInOut(duration: 0.18), value: tabs.sftpPanelVisible)
+.animation(.easeInOut(duration: 0.18), value: tabs.editingHost?.id)
         .sheet(isPresented: $tabs.presentingSerialConnect) { SerialConnectSheet() }
         // Single window-level tooltip layer, above everything (panes, choosers,
         // sidebar). Sits in the named space that every `.hoverTip` resolves in.

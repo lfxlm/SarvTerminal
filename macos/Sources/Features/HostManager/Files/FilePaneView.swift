@@ -5,6 +5,13 @@ import SwiftUI
 struct FilePaneView: View {
     @ObservedObject var model: SFTPBrowserModel
     let onAction: (FilePaneAction) -> Void
+    /// Whether to show the host/location picker button in the toolbar.
+    var showHostPicker: Bool = true
+    /// Compact layout: reduces Date/Size width and hides Kind — useful for
+    /// side panels where horizontal space is limited.
+    var compact: Bool = false
+    /// Label for the "copy / download" context menu action.
+    var copyActionLabel: String = "Copy to target directory"
 
     /// Editable copy of the current path (synced from `model.path`).
     @State private var pathEdit: String = ""
@@ -18,6 +25,10 @@ struct FilePaneView: View {
     private let dateW: CGFloat = 150
     private let sizeW: CGFloat = 78
     private let kindW: CGFloat = 72
+
+    private var effectiveDateW: CGFloat { compact ? 120 : dateW }
+    private var effectiveSizeW: CGFloat { compact ? 65 : sizeW }
+    private var effectiveKindW: CGFloat { compact ? 0 : kindW }
 
     private static let dateFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -54,16 +65,18 @@ struct FilePaneView: View {
             Button { model.goForward() } label: { Image(systemName: "chevron.right") }
                 .buttonStyle(.plain).disabled(!model.canGoForward).hoverTip("Forward")
 
-            Button { onAction(.chooseHost) } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: model.location.isLocal ? "desktopcomputer" : "server.rack")
-                    Text(model.location.title).fontWeight(.medium)
-                    Image(systemName: "chevron.down").font(.system(size: 9)).foregroundStyle(.secondaryText)
+            if showHostPicker {
+                Button { onAction(.chooseHost) } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: model.location.isLocal ? "desktopcomputer" : "server.rack")
+                        Text(model.location.title).fontWeight(.medium)
+                        Image(systemName: "chevron.down").font(.system(size: 9)).foregroundStyle(.secondaryText)
+                    }
+                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    .background(RoundedRectangle(cornerRadius: 6).fill(Color.secondary.opacity(0.12)))
                 }
-                .padding(.horizontal, 8).padding(.vertical, 4)
-                .background(RoundedRectangle(cornerRadius: 6).fill(Color.secondary.opacity(0.12)))
+                .buttonStyle(.plain).hoverTip("Change host / Local")
             }
-            .buttonStyle(.plain).hoverTip("Change host / Local")
 
             breadcrumbBar
 
@@ -198,9 +211,13 @@ struct FilePaneView: View {
     private var columnHeader: some View {
         HStack(spacing: 10) {
             sortHeader("Name", .name).frame(maxWidth: .infinity, alignment: .leading)
-            sortHeader("Date Modified", .date).frame(width: dateW, alignment: .leading)
-            sortHeader("Size", .size).frame(width: sizeW, alignment: .trailing)
-            sortHeader("Kind", .kind).frame(width: kindW, alignment: .leading)
+            if !compact {
+                sortHeader("Date Modified", .date).frame(width: effectiveDateW, alignment: .leading)
+            }
+            sortHeader("Size", .size).frame(width: effectiveSizeW, alignment: .trailing)
+            if !compact {
+                sortHeader("Kind", .kind).frame(width: effectiveKindW, alignment: .leading)
+            }
         }
         .padding(.horizontal, 12).padding(.vertical, 6)
         .background(Color.secondary.opacity(0.06))
@@ -247,9 +264,13 @@ struct FilePaneView: View {
         HStack(spacing: 10) {
             Image(systemName: "folder.fill").foregroundStyle(Color.accentColor.opacity(0.7)).frame(width: 18)
             Text("..").frame(maxWidth: .infinity, alignment: .leading)
-            Text("").frame(width: dateW)
-            Text("").frame(width: sizeW)
-            Text("").frame(width: kindW)
+            if !compact {
+                Text("").frame(width: effectiveDateW)
+            }
+            Text("").frame(width: effectiveSizeW)
+            if !compact {
+                Text("").frame(width: effectiveKindW)
+            }
         }
         .padding(.horizontal, 12).padding(.vertical, 6)
         .contentShape(Rectangle())
@@ -372,13 +393,17 @@ struct FilePaneView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            Text(item.modified.map { Self.dateFormatter.string(from: $0) } ?? "—")
-                .font(.system(size: 11)).foregroundStyle(.secondaryText)
-                .frame(width: dateW, alignment: .leading)
+            if !compact {
+                Text(item.modified.map { Self.dateFormatter.string(from: $0) } ?? "—")
+                    .font(.system(size: 11)).foregroundStyle(.secondaryText)
+                    .frame(width: effectiveDateW, alignment: .leading)
+            }
             Text(item.sizeText).font(.system(size: 11)).foregroundStyle(.secondaryText)
-                .frame(width: sizeW, alignment: .trailing)
-            Text(model.kind(item)).font(.system(size: 11)).foregroundStyle(.secondaryText)
-                .lineLimit(1).frame(width: kindW, alignment: .leading)
+                .frame(width: effectiveSizeW, alignment: .trailing)
+            if !compact {
+                Text(model.kind(item)).font(.system(size: 11)).foregroundStyle(.secondaryText)
+                    .lineLimit(1).frame(width: effectiveKindW, alignment: .leading)
+            }
         }
         .padding(.horizontal, 12).padding(.vertical, 6)
         .background(selected ? Color.accentColor.opacity(0.18) : .clear)
@@ -403,14 +428,14 @@ struct FilePaneView: View {
                 Divider()
             }
             if model.isSelected(item.id), model.selectedIDs.count > 1 {
-                Button("Copy \(model.selectedIDs.count) items to target directory") {
+                Button("\(copyActionLabel) (\(model.selectedIDs.count) items)") {
                     onAction(.copyToTarget(Array(model.selectedItems)))
                 }
                 Button("Delete \(model.selectedIDs.count) items", role: .destructive) {
                     onAction(.delete(Array(model.selectedItems)))
                 }
             } else {
-                Button("Copy to target directory") { onAction(.copyToTarget([item])) }
+                Button(copyActionLabel) { onAction(.copyToTarget([item])) }
                 Button("Delete", role: .destructive) { onAction(.delete([item])) }
             }
             Button("Rename") { onAction(.rename(item)) }

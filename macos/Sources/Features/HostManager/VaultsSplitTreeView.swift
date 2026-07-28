@@ -216,6 +216,28 @@ private struct VaultsSplitLeaf: View {
                 }
                 .accessibilityElement(children: .contain)
                 .accessibilityLabel("Terminal pane")
+                // SFTP drawer toggle — subtle floating button when SSH is
+                // connected and the drawer isn't already open.
+                .overlay(alignment: .bottomTrailing) {
+                    if isSSHConnected, !tabs.sftpPanelVisible, !awaiting {
+                        Button { 
+                            tabs.sftpPanelHost = connectedHost
+                            tabs.sftpPanelVisible = true
+                        } label: {
+                            Image(systemName: "arrow.up.doc")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(.white)
+                                .padding(6)
+                                .background(Circle().fill(Color.accentColor.opacity(0.85)))
+                                .shadow(radius: 2)
+                        }
+                        .buttonStyle(.plain)
+                        .help("SFTP — upload files to this server")
+                        .padding(6)
+                        .transition(.scale.combined(with: .opacity))
+                    }
+                }
+                // SFTP side panel is driven by tabs.sftpPanelHost in VaultsRootView
         }
     }
 
@@ -223,6 +245,21 @@ private struct VaultsSplitLeaf: View {
     /// every pane (and every user) reads the same way — running process when
     /// busy, cwd folder when idle — instead of whatever OSC title the shell sent.
     private var paneTitle: String { tabs.paneDisplayTitle(for: surfaceView) }
+
+    /// Whether this pane has a connected SSH session.
+    private var isSSHConnected: Bool {
+        guard let conn = tabs.connections[surfaceView.id],
+              case .connected = conn.model.stage,
+              conn.model.host != nil else { return false }
+        return true
+    }
+
+    /// The `SavedHost` for a connected SSH session on this pane.
+    private var connectedHost: SavedHost? {
+        guard let conn = tabs.connections[surfaceView.id],
+              case .connected = conn.model.stage else { return nil }
+        return conn.model.host
+    }
 
     /// Per-pane header (Termius-style), shown only when a tab has >1 pane.
     /// The icon+title region is a DRAG HANDLE (open/closed-hand cursor): drag

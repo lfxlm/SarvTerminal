@@ -228,6 +228,13 @@ final class VaultsTabsModel: ObservableObject {
     /// screen (driven by the SSH popup's "Edit host" — keeps the popup visible).
     @Published var editingHost: SavedHost?
 
+    /// When true, the SFTP side panel is visible. The panel view stays mounted
+    /// so in-progress transfers survive hide/show cycles.
+    @Published var sftpPanelVisible: Bool = false
+    /// The host connected by the SFTP side panel. Set once and never cleared,
+    /// so the panel view stays alive across hide/show cycles.
+    @Published var sftpPanelHost: SavedHost?
+
     /// Drives the ad-hoc Serial Console connect sheet (device + baud picker).
     /// Set from the Hosts "Serial" button and the command palette; presented by
     /// `VaultsRootView`.
@@ -403,6 +410,20 @@ final class VaultsTabsModel: ObservableObject {
     var activeTerminal: TerminalTab? {
         guard case let .terminal(id) = selection else { return nil }
         return terminals.first { $0.id == id }
+    }
+
+    /// The `SavedHost` of a connected SSH pane in the active terminal tab, if
+    /// any. Used by the SFTP button in the tab strip to open SFTP for this host.
+    var activeSSHHost: SavedHost? {
+        guard let tab = activeTerminal else { return nil }
+        for leaf in tab.surfaceTree.root?.leaves() ?? [] {
+            if let conn = connections[leaf.id],
+               case .connected = conn.model.stage,
+               let host = conn.model.host {
+                return host
+            }
+        }
+        return nil
     }
 
     /// The surface a snippet should run in: the focused terminal, else the most

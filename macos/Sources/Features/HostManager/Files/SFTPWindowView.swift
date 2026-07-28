@@ -4,8 +4,15 @@ import SwiftUI
 /// file browser, each side with its own tab bar, and a unified transfer table
 /// at the bottom.
 struct SFTPWindowView: View {
+    init(initialRemoteHost: SavedHost? = nil) {
+        self.initialRemoteHost = initialRemoteHost
+    }
     @StateObject private var leftTabs = SFTPTabGroup()
     @StateObject private var rightTabs = SFTPTabGroup()
+
+    /// Optional remote host to pre-connect on the right pane (used by the side
+    /// panel). When nil, the standalone window starts with both panes empty.
+    let initialRemoteHost: SavedHost?
 
     // Dialog state (mirrors the former SFTPView's per-view dialogs).
     @State private var hostPickerSide: Side?
@@ -76,6 +83,9 @@ struct SFTPWindowView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear {
             if leftTabs.tabs.isEmpty { leftTabs.newTab(location: .local) }
+            if let host = initialRemoteHost, rightTabs.tabs.isEmpty {
+                rightTabs.newTab(location: .host(host))
+            }
         }
         // Dialogs
         .sheet(item: $hostPickerSide) { side in

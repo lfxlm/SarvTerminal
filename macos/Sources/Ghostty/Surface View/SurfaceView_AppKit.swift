@@ -1652,38 +1652,38 @@ extension Ghostty {
 
             // If we have a selection, add copy
             if let text = self.accessibilitySelectedText(), text.count > 0 {
-                menu.addItem(withTitle: "Copy", action: #selector(copy(_:)), keyEquivalent: "")
+                menu.addItem(withTitle: loc(.copy_menu), action: #selector(copy(_:)), keyEquivalent: "")
             }
-            menu.addItem(withTitle: "Paste", action: #selector(paste(_:)), keyEquivalent: "")
+            menu.addItem(withTitle: loc(.paste_menu), action: #selector(paste(_:)), keyEquivalent: "")
 
             menu.addItem(.separator())
-            item = menu.addItem(withTitle: "Split Right", action: #selector(splitRight(_:)), keyEquivalent: "")
+            item = menu.addItem(withTitle: loc(.split_right), action: #selector(splitRight(_:)), keyEquivalent: "")
             item.setImageIfDesired(systemSymbolName: "rectangle.righthalf.inset.filled")
-            item = menu.addItem(withTitle: "Split Left", action: #selector(splitLeft(_:)), keyEquivalent: "")
+            item = menu.addItem(withTitle: loc(.split_left), action: #selector(splitLeft(_:)), keyEquivalent: "")
             item.setImageIfDesired(systemSymbolName: "rectangle.leadinghalf.inset.filled")
-            item = menu.addItem(withTitle: "Split Down", action: #selector(splitDown(_:)), keyEquivalent: "")
+            item = menu.addItem(withTitle: loc(.split_down), action: #selector(splitDown(_:)), keyEquivalent: "")
             item.setImageIfDesired(systemSymbolName: "rectangle.bottomhalf.inset.filled")
-            item = menu.addItem(withTitle: "Split Up", action: #selector(splitUp(_:)), keyEquivalent: "")
+            item = menu.addItem(withTitle: loc(.split_up), action: #selector(splitUp(_:)), keyEquivalent: "")
             item.setImageIfDesired(systemSymbolName: "rectangle.tophalf.inset.filled")
 
             menu.addItem(.separator())
-            item = menu.addItem(withTitle: "Reset Terminal", action: #selector(resetTerminal(_:)), keyEquivalent: "")
+            item = menu.addItem(withTitle: loc(.reset_terminal), action: #selector(resetTerminal(_:)), keyEquivalent: "")
             item.setImageIfDesired(systemSymbolName: "arrow.trianglehead.2.clockwise")
-            item = menu.addItem(withTitle: "Toggle Terminal Inspector", action: #selector(toggleTerminalInspector(_:)), keyEquivalent: "")
+            item = menu.addItem(withTitle: loc(.toggle_inspector), action: #selector(toggleTerminalInspector(_:)), keyEquivalent: "")
             item.setImageIfDesired(systemSymbolName: "scope")
-            item = menu.addItem(withTitle: "Terminal Read-only", action: #selector(toggleReadonly(_:)), keyEquivalent: "")
+            item = menu.addItem(withTitle: loc(.terminal_readonly), action: #selector(toggleReadonly(_:)), keyEquivalent: "")
             item.setImageIfDesired(systemSymbolName: "eye.fill")
             item.state = readonly ? .on : .off
             menu.addItem(.separator())
-            item = menu.addItem(withTitle: "Change Tab Title...", action: #selector(BaseTerminalController.changeTabTitle(_:)), keyEquivalent: "")
+            item = menu.addItem(withTitle: loc(.change_tab_title), action: #selector(BaseTerminalController.changeTabTitle(_:)), keyEquivalent: "")
             item.setImageIfDesired(systemSymbolName: "pencil.line")
-            item = menu.addItem(withTitle: "Change Terminal Title...", action: #selector(changeTitle(_:)), keyEquivalent: "")
+            item = menu.addItem(withTitle: loc(.change_terminal_title), action: #selector(changeTitle(_:)), keyEquivalent: "")
 
             // Send Password — available when the surface belongs to an SSH
             // connection whose saved host has a password.
             if let _ = sshPassword {
                 menu.addItem(.separator())
-                item = menu.addItem(withTitle: "Send Password", action: #selector(sendPassword(_:)), keyEquivalent: "")
+                item = menu.addItem(withTitle: loc(.send_password), action: #selector(sendPassword(_:)), keyEquivalent: "")
                 item.setImageIfDesired(systemSymbolName: "key.fill")
             }
 

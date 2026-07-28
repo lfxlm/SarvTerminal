@@ -10,6 +10,8 @@ struct PermissionsSheet: View {
     let onApply: (String) -> Void
     let onCancel: () -> Void
 
+    @ObservedObject private var lang = AppLanguageSettings.shared
+
     /// The 9 permission bits, ordered owner r,w,x · group r,w,x · other r,w,x.
     @State private var bits: [Bool]
     /// The octal text the user can type directly (kept in sync with `bits`).
@@ -49,7 +51,7 @@ struct PermissionsSheet: View {
                 .font(.title2)
                 .foregroundStyle(.secondaryText)
             VStack(alignment: .leading, spacing: 2) {
-                Text("Permissions").font(.headline)
+                Text(loc(.permissions)).font(.headline)
                 Text(fileName).font(.subheadline).foregroundStyle(.secondaryText)
                     .lineLimit(1).truncationMode(.middle)
             }
@@ -61,14 +63,14 @@ struct PermissionsSheet: View {
         Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 10) {
             GridRow {
                 Text("").gridColumnAlignment(.leading)
-                ForEach(perms, id: \.self) { p in
+                ForEach(perms.map { locString($0) }, id: \.self) { p in
                     Text(p).font(.caption.weight(.medium)).foregroundStyle(.secondaryText)
                         .gridColumnAlignment(.center)
                 }
             }
             ForEach(Array(classes.enumerated()), id: \.offset) { classIndex, name in
                 GridRow {
-                    Text(name).font(.callout)
+                    Text(locString(name)).font(.callout)
                     ForEach(0..<3, id: \.self) { permIndex in
                         Toggle("", isOn: binding(classIndex: classIndex, permIndex: permIndex))
                             .labelsHidden()
@@ -82,7 +84,7 @@ struct PermissionsSheet: View {
     private var octalRow: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Octal").font(.caption).foregroundStyle(.secondaryText)
+                Text(loc(.octal)).font(.caption).foregroundStyle(.secondaryText)
                 TextField("755", text: $octalText)
                     .frame(width: 70)
                     .onChange(of: octalText) { newValue in
@@ -94,7 +96,7 @@ struct PermissionsSheet: View {
                     }
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text("Symbolic").font(.caption).foregroundStyle(.secondaryText)
+                Text(loc(.symbolic)).font(.caption).foregroundStyle(.secondaryText)
                 Text(Self.symbolic(fromBits: bits))
                     .font(.system(.callout, design: .monospaced))
             }
@@ -105,11 +107,24 @@ struct PermissionsSheet: View {
     private var footer: some View {
         HStack {
             Spacer()
-            Button("Cancel", role: .cancel) { onCancel() }
+            Button(loc(.cancel), role: .cancel) { onCancel() }
                 .keyboardShortcut(.cancelAction)
-            Button("Apply") { onApply(Self.octal(fromBits: bits)) }
+            Button(loc(.apply)) { onApply(Self.octal(fromBits: bits)) }
                 .keyboardShortcut(.defaultAction)
                 .disabled(octalText.count != 3)
+        }
+    }
+
+    /// Map a stored English label to its localized version.
+    private func locString(_ label: String) -> String {
+        switch label {
+        case "Owner": return loc(.owner)
+        case "Group": return loc(.group)
+        case "Everyone": return loc(.everyone)
+        case "Read": return loc(.read_perm)
+        case "Write": return loc(.write_perm)
+        case "Execute": return loc(.execute_perm)
+        default: return label
         }
     }
 

@@ -99,8 +99,8 @@ struct HostsSectionView: View {
 
         var label: String {
             switch self {
-            case .grid: return "Grid"
-            case .list: return "List"
+            case .grid: return loc(.h_view_grid)
+            case .list: return loc(.h_view_list)
             }
         }
 
@@ -118,10 +118,10 @@ struct HostsSectionView: View {
         case azAscending, azDescending, newestFirst, oldestFirst
         var label: String {
             switch self {
-            case .azAscending:   return "A–Z"
-            case .azDescending:  return "Z–A"
-            case .newestFirst:   return "Newest first"
-            case .oldestFirst:   return "Oldest first"
+            case .azAscending:   return loc(.h_sort_az)
+            case .azDescending:  return loc(.h_sort_za)
+            case .newestFirst:   return loc(.h_sort_newest)
+            case .oldestFirst:   return loc(.h_sort_oldest)
             }
         }
         var systemImage: String {
@@ -232,7 +232,7 @@ struct HostsSectionView: View {
     ///   text as an ssh command (when it looks like one).
     private var quickConnectBar: some View {
         HStack(spacing: 8) {
-            TextField("Find a host or ssh user@hostname…", text: $quickConnect)
+            TextField(loc(.h_quick_connect_placeholder), text: $quickConnect)
                 .textFieldStyle(.plain)
                 .onSubmit { quickConnectGo() }
             if !quickConnect.isEmpty {
@@ -241,10 +241,10 @@ struct HostsSectionView: View {
                         .foregroundStyle(.tertiaryText)
                 }
                 .buttonStyle(.plain)
-                .help("Clear")
+                .help(loc(.h_clear_help))
             }
             Button(action: quickConnectGo) {
-                Text("Connect")
+                Text(loc(.h_connect_button))
                     .font(.system(size: 12, weight: .semibold))
                     .padding(.horizontal, 14).padding(.vertical, 6)
                     .background(
@@ -258,8 +258,8 @@ struct HostsSectionView: View {
             .buttonStyle(.plain)
             .disabled(!canConnectQuick)
             .help(canConnectQuick
-                  ? "Run as ssh command"
-                  : "Type ssh user@hostname to connect")
+                  ? loc(.h_connect_as_ssh)
+                  : loc(.h_connect_typing))
         }
         .padding(.leading, 14).padding(.trailing, 6)
         .padding(.vertical, 6)
@@ -285,13 +285,13 @@ struct HostsSectionView: View {
     private var actionRow: some View {
         HStack(spacing: 12) {
             newHostSplitButton
-            actionPill(label: "Import", systemImage: "square.and.arrow.down") {
+            actionPill(label: loc(.h_action_import), systemImage: "square.and.arrow.down") {
                 showImporter = true
             }
-            actionPill(label: "Terminal", systemImage: "terminal") {
+            actionPill(label: loc(.h_action_terminal), systemImage: "terminal") {
                 VaultsTabsModel.shared.newTerminal(command: nil, name: "Terminal")
             }
-            actionPill(label: "Serial",   systemImage: "cable.connector") {
+            actionPill(label: loc(.h_action_serial),   systemImage: "cable.connector") {
                 VaultsTabsModel.shared.presentingSerialConnect = true
             }
             Spacer()
@@ -307,7 +307,7 @@ struct HostsSectionView: View {
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "plus")
-                    Text("New host")
+                    Text(loc(.h_new_host))
                 }
                 .padding(.leading, 12).padding(.trailing, 10).padding(.vertical, 6)
                 .contentShape(Rectangle())
@@ -317,11 +317,11 @@ struct HostsSectionView: View {
             Divider().frame(height: 16).opacity(0.4)
 
             Menu {
-                Button("New Group", systemImage: "folder.badge.plus") {
+                Button(loc(.h_new_group), systemImage: "folder.badge.plus") {
                     startNewGroup(parentID: focusedGroupID)
                 }
                 Divider()
-                Section("Cloud (coming soon)") {
+                Section(loc(.h_cloud_coming)) {
                     Button("AWS Integration", systemImage: "cloud") {} .disabled(true)
                     Button("DigitalOcean Integration", systemImage: "cloud") {} .disabled(true)
                     Button("Azure Integration", systemImage: "cloud") {} .disabled(true)

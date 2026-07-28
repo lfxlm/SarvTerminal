@@ -9,6 +9,8 @@ struct SftpSidePanelView: View {
 
     @StateObject private var remote = SFTPBrowserModel()
 
+    @ObservedObject private var lang = AppLanguageSettings.shared
+
     // ── Upload progress ───────────────────────────────────────────
     struct UploadProgress: Identifiable {
         let id = UUID()
@@ -49,19 +51,19 @@ struct SftpSidePanelView: View {
             Button(action: uploadFiles) {
                 HStack(spacing: 4) {
                     Image(systemName: "plus")
-                    Text("Upload").font(.system(size: 11))
+                    Text(loc(.upload)).font(.system(size: 11))
                 }
                 .padding(.horizontal, 8).padding(.vertical, 4)
                 .background(RoundedRectangle(cornerRadius: 4).fill(Color.accentColor.opacity(0.12)))
             }
             .buttonStyle(.plain)
-            .help("Upload files to current directory")
+            .help(loc(.upload_files))
             Button(action: onClose) {
                 Image(systemName: "xmark")
                     .font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
-            .help("Close SFTP panel")
+            .help(loc(.sftp_panel_close))
         }
         .padding(.horizontal, 12).padding(.vertical, 6)
     }
@@ -78,7 +80,7 @@ struct SftpSidePanelView: View {
                     onAction: { action in handle(action) },
                     showHostPicker: false,
                     compact: true,
-                    copyActionLabel: "Download"
+                    copyActionLabel: loc(.download)
                 )
                 uploadProgressList
             }
@@ -88,8 +90,8 @@ struct SftpSidePanelView: View {
         .onChange(of: showNewFolder) { visible in
             guard visible else { return }
             SarvAlert.present(
-                title: "New Folder",
-                buttons: [.init("Create", isDefault: true), .init("Cancel", isCancel: true)],
+                title: loc(.new_folder_title),
+                buttons: [.init(loc(.create), isDefault: true), .init(loc(.cancel), isCancel: true)],
                 inputInitial: ""
             ) { result in
                 if result.buttonIndex == 0, !result.inputText.isEmpty {
@@ -101,8 +103,8 @@ struct SftpSidePanelView: View {
         .onChange(of: renameTarget?.name) { _ in
             guard let target = renameTarget else { return }
             SarvAlert.present(
-                title: "Rename",
-                buttons: [.init("Rename", isDefault: true), .init("Cancel", isCancel: true)],
+                title: loc(.rename_title),
+                buttons: [.init(loc(.rename), isDefault: true), .init(loc(.cancel), isCancel: true)],
                 inputInitial: renameText
             ) { result in
                 if result.buttonIndex == 0, !result.inputText.isEmpty {
@@ -130,14 +132,14 @@ struct SftpSidePanelView: View {
             guard let items = pendingDeletion else { return }
             let names = items.map(\.name)
             if names.count == 1 {
-                DeleteConfirmation.confirm(names[0], detail: "This can't be undone.") { confirmed in
+                DeleteConfirmation.confirm(names[0], detail: loc(.delete_confirm_detail)) { confirmed in
                     if confirmed { Task { await performDelete(items) } }
                 }
             } else {
                 SarvAlert.present(
-                    title: "Delete \(names.count) items?",
-                    message: "Are you sure you want to delete \(names.count) items? This can't be undone.",
-                    buttons: [.init("Delete", isDefault: true, isDestructive: true), .init("Cancel", isCancel: true)]
+                    title: loc(.delete_multi_title, names.count),
+                    message: loc(.delete_multi_message, names.count),
+                    buttons: [.init(loc(.delete), isDefault: true, isDestructive: true), .init(loc(.cancel), isCancel: true)]
                 ) { result in
                     if result.buttonIndex == 0 { Task { await performDelete(items) } }
                 }
@@ -163,7 +165,7 @@ struct SftpSidePanelView: View {
                     if case .failed = $0.status { return true }; return false }) {
                     HStack {
                         Spacer()
-                        Button("Clear completed") { uploads.removeAll() }
+                        Button(loc(.clear_completed)) { uploads.removeAll() }
                             .controlSize(.small).buttonStyle(.plain)
                             .foregroundStyle(.secondaryText)
                             .font(.system(size: 11))
@@ -188,7 +190,7 @@ struct SftpSidePanelView: View {
             if u.direction == .upload {
                 HStack(spacing: 3) {
                     Image(systemName: "desktopcomputer").font(.system(size: 9))
-                    Text("Local").lineLimit(1).truncationMode(.tail)
+                    Text(loc(.local)).lineLimit(1).truncationMode(.tail)
                 }
                 .frame(width: 70, alignment: .leading)
                 Image(systemName: "arrow.right").font(.system(size: 8)).foregroundStyle(.tertiaryText).frame(width: 10)
@@ -206,7 +208,7 @@ struct SftpSidePanelView: View {
                 Image(systemName: "arrow.right").font(.system(size: 8)).foregroundStyle(.tertiaryText).frame(width: 10)
                 HStack(spacing: 3) {
                     Image(systemName: "desktopcomputer").font(.system(size: 9))
-                    Text("Local").lineLimit(1).truncationMode(.tail)
+                    Text(loc(.local)).lineLimit(1).truncationMode(.tail)
                 }
                 .frame(width: 70, alignment: .leading)
             }
@@ -231,7 +233,7 @@ struct SftpSidePanelView: View {
                         ProgressView().scaleEffect(x: 0.7, y: 0.4, anchor: .leading).frame(width: 40)
                     }
                 case .completed:
-                    Text("Done").foregroundStyle(.green)
+                    Text(loc(.done)).foregroundStyle(.green)
                 case .failed(let msg):
                     Text(msg).foregroundStyle(.red).lineLimit(1)
                 }
@@ -292,7 +294,7 @@ struct SftpSidePanelView: View {
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.canCreateDirectories = true
-        panel.message = "Choose a destination folder for the downloaded files"
+        panel.message = loc(.choose_download_folder)
         panel.begin { response in
             guard response == .OK, let destURL = panel.url else { return }
             let local = LocalFileBackend()

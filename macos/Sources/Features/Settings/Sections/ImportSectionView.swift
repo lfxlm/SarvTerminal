@@ -7,19 +7,19 @@ struct ImportSectionView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            SettingsCard(title: "Migrate from another terminal") {
+            SettingsCard(title: loc(.imp_migrate)) {
                 VStack(alignment: .leading, spacing: 14) {
-                    Text("Coming from WezTerm, iTerm2, kitty, Alacritty, or Ghostty? Import your theme, colors, font, padding, and keybindings so SarvTerminal feels like home from the first launch.")
+                    Text(loc(.imp_desc))
                         .font(.callout)
                         .foregroundStyle(.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
 
-                    Label("Appearance is mapped automatically; you review and confirm keybindings.",
+                    Label(loc(.imp_auto_map),
                           systemImage: "wand.and.stars")
                         .font(.caption)
                         .foregroundStyle(.secondaryText)
 
-                    Label("Your hosts, vaults, SFTP, and sync are never touched.",
+                    Label(loc(.imp_not_touched),
                           systemImage: "lock.shield")
                         .font(.caption)
                         .foregroundStyle(.secondaryText)
@@ -27,7 +27,7 @@ struct ImportSectionView: View {
                     Button {
                         showSheet = true
                     } label: {
-                        Label("Import from another terminal…", systemImage: "square.and.arrow.down")
+                        Label(loc(.imp_button), systemImage: "square.and.arrow.down")
                     }
                     .controlSize(.large)
                     .padding(.top, 2)
@@ -36,15 +36,15 @@ struct ImportSectionView: View {
                 .padding(SettingsMetrics.horizontalPadding)
             }
 
-            SettingsCard(title: "What gets imported") {
+            SettingsCard(title: loc(.imp_what_gets_imported)) {
                 VStack(alignment: .leading, spacing: 0) {
-                    supportRow("Ghostty", "Theme, colors, font, padding, cursor, keybinds — near 1:1.")
+                    supportRow(loc(.imp_ghostty_name), loc(.imp_ghostty_desc))
                     SettingsDivider()
-                    supportRow("Alacritty · kitty", "Colors, font, opacity, padding, cursor, keybinds.")
+                    supportRow(loc(.imp_alacritty_name), loc(.imp_alacritty_desc))
                     SettingsDivider()
-                    supportRow("WezTerm", "Best-effort scrape of a Lua config (colors, font, keybinds).")
+                    supportRow(loc(.imp_wezterm_name), loc(.imp_wezterm_desc))
                     SettingsDivider()
-                    supportRow("iTerm2", "Colors from an exported .itermcolors file.")
+                    supportRow(loc(.imp_iterm2_name), loc(.imp_iterm2_desc))
                 }
             }
         }

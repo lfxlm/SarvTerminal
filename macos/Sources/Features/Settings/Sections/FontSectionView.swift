@@ -21,9 +21,9 @@ struct FontSectionView: View {
     // MARK: - Advanced
 
     private var advancedCard: some View {
-        SettingsCard(title: "Advanced") {
-            row("Auto weight") {
-                Toggle("Adjust weight automatically for the screen (thicker on low-DPI, lighter on Retina)",
+        SettingsCard(title: loc(.f_advanced_card)) {
+            row(loc(.f_auto_weight)) {
+                Toggle(loc(.f_auto_weight_desc),
                        isOn: $autoFontWeight)
                     .toggleStyle(.checkbox)
                     .onChange(of: autoFontWeight) { _ in
@@ -31,22 +31,22 @@ struct FontSectionView: View {
                     }
             }
             divider
-            row("Thicken") {
-                Toggle("Synthetic bold — thicken glyphs (helps thin fonts)",
+            row(loc(.f_thicken)) {
+                Toggle(loc(.f_thicken_desc),
                        isOn: $viewModel.font.thicken)
                     .toggleStyle(.checkbox)
                     .disabled(autoFontWeight)
                     .help(autoFontWeight ? "Managed automatically while “Auto weight” is on." : "")
             }
             divider
-            row("Cell width") {
+            row(loc(.f_cell_width)) {
                 TextField("e.g. 10% or -1", text: $viewModel.font.adjustCellWidth)
                     .textFieldStyle(.roundedBorder)
                     .frame(maxWidth: 160)
                     .help("adjust-cell-width — nudge cell width (percent or points).")
             }
             divider
-            row("Cell height") {
+            row(loc(.f_cell_height)) {
                 TextField("e.g. 10% or -1", text: $viewModel.font.adjustCellHeight)
                     .textFieldStyle(.roundedBorder)
                     .frame(maxWidth: 160)
@@ -58,8 +58,8 @@ struct FontSectionView: View {
     // MARK: - Family
 
     private var familyCard: some View {
-        SettingsCard(title: "Family") {
-            row("Font family") {
+        SettingsCard(title: loc(.f_family_card)) {
+            row(loc(.f_font_family)) {
                 FontFamilyPicker(family: $viewModel.font.family)
             }
         }
@@ -68,8 +68,8 @@ struct FontSectionView: View {
     // MARK: - Size
 
     private var sizeCard: some View {
-        SettingsCard(title: "Size") {
-            row("Font size") {
+        SettingsCard(title: loc(.f_size_card)) {
+            row(loc(.f_font_size)) {
                 HStack(spacing: 12) {
                     Slider(
                         value: $viewModel.font.size,
@@ -92,8 +92,8 @@ struct FontSectionView: View {
     // MARK: - Features
 
     private var featuresCard: some View {
-        SettingsCard(title: "Features") {
-            row("OpenType features") {
+        SettingsCard(title: loc(.f_features_card)) {
+            row(loc(.f_opentype_features)) {
                 FontFeaturePicker(features: $viewModel.font.feature)
             }
         }

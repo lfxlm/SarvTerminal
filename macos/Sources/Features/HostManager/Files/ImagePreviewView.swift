@@ -16,6 +16,8 @@ struct ImagePreviewView: View {
     @State private var isLoading = true
     @State private var error: String?
 
+    @ObservedObject private var lang = AppLanguageSettings.shared
+
     // Zoom / pan
     @State private var scale: CGFloat = 1.0
     @State private var offset: CGSize = .zero
@@ -94,7 +96,7 @@ struct ImagePreviewView: View {
     private var loadingView: some View {
         VStack(spacing: 12) {
             ProgressView().controlSize(.large)
-            Text("Loading image\u{2026}")
+            Text(loc(.loading_image))
                 .font(.caption)
                 .foregroundStyle(.white.opacity(0.7))
         }
@@ -108,7 +110,7 @@ struct ImagePreviewView: View {
             Text(msg)
                 .font(.caption)
                 .foregroundStyle(.white.opacity(0.7))
-            Button("Close") { onClose() }
+            Button(loc(.close)) { onClose() }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
                 .tint(.white.opacity(0.3))
@@ -148,7 +150,7 @@ struct ImagePreviewView: View {
         }
         .buttonStyle(.plain)
         .padding(16)
-        .help("Close")
+        .help(loc(.close))
     }
 
     // MARK: - Status bar
@@ -165,7 +167,7 @@ struct ImagePreviewView: View {
                     .foregroundStyle(.white.opacity(0.5))
             }
             Text("\u{00b7}").foregroundStyle(.white.opacity(0.3))
-            Text("⌘±/scroll to zoom  ·  drag to pan  ·  double‑click to fit")
+            Text(loc(.image_instructions))
                 .foregroundStyle(.white.opacity(0.5))
         }
         .font(.caption2)

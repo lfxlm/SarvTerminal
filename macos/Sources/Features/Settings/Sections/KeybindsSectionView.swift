@@ -59,7 +59,7 @@ struct KeybindsSectionView: View {
         .onChange(of: pendingConflict) { conflict in
             guard let conflict else { return }
             SarvAlert.present(
-                title: "Shortcut already in use",
+                title: loc(.kb_shortcut_in_use),
                 message: """
                     \(conflict.symbolicCombo) is currently bound to: \
                     \(conflict.conflictSummary).
@@ -68,8 +68,8 @@ struct KeybindsSectionView: View {
                     The existing binding will be removed.
                     """,
                 buttons: [
-                    .init("Replace", isDefault: true, isDestructive: true),
-                    .init("Cancel", isCancel: true),
+                    .init(loc(.kb_replace), isDefault: true, isDestructive: true),
+                    .init(loc(.kb_cancel), isCancel: true),
                 ]) { result in
                 if result.buttonIndex == 0 { resolveConflictByReplacing(conflict) }
             }
@@ -78,15 +78,15 @@ struct KeybindsSectionView: View {
         .onChange(of: showResetConfirm) { show in
             guard show else { return }
             SarvAlert.present(
-                title: "Reset all keybindings to defaults?",
+                title: loc(.kb_reset_title),
                 message: """
                     All your custom keybindings will be removed from the config \
                     file. The built-in defaults (Copy ⌘C, Paste ⌘V, …) will \
                     take effect again. This can't be undone.
                     """,
                 buttons: [
-                    .init("Reset", isDefault: true, isDestructive: true),
-                    .init("Cancel", isCancel: true),
+                    .init(loc(.kb_reset), isDefault: true, isDestructive: true),
+                    .init(loc(.kb_cancel), isCancel: true),
                 ]) { result in
                 if result.buttonIndex == 0 { resetToDefaults() }
             }
@@ -95,9 +95,9 @@ struct KeybindsSectionView: View {
         .onChange(of: reservedBlock) { block in
             guard let block else { return }
             SarvAlert.present(
-                title: "Shortcut reserved",
+                title: loc(.kb_shortcut_reserved),
                 message: "\(block.symbolic) is reserved for “\(block.ownerLabel)” and can't be reassigned.",
-                buttons: [.init("OK", isDefault: true)])
+                buttons: [.init(loc(.kb_ok), isDefault: true)])
             reservedBlock = nil
         }
     }
@@ -106,9 +106,9 @@ struct KeybindsSectionView: View {
 
     private var headerCard: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Configure keyboard shortcuts")
+            Text(loc(.kb_configure))
                 .font(.title3.weight(.semibold))
-            Text("Click the + on any action to record a shortcut. Multiple shortcuts can map to the same action. Sarv Terminal's own shortcuts (command palette, local terminal) are rebindable too — e.g. you can swap ⌘T and ⌘L.")
+            Text(loc(.kb_configure_detail))
                 .foregroundStyle(.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -123,7 +123,7 @@ struct KeybindsSectionView: View {
     // MARK: - List
 
     private var listCard: some View {
-        SettingsCard(title: "Commands") {
+        SettingsCard(title: loc(.kb_commands)) {
             VStack(alignment: .leading, spacing: 0) {
                 searchRow
                 Divider()
@@ -147,7 +147,7 @@ struct KeybindsSectionView: View {
         HStack(spacing: 10) {
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondaryText)
-                TextField("Search by action or keys (e.g. \"cmd t\")", text: $search)
+                TextField(loc(.kb_search), text: $search)
                     .textFieldStyle(.plain)
                 if !search.isEmpty {
                     Button {
@@ -162,17 +162,17 @@ struct KeybindsSectionView: View {
             Button {
                 showResetConfirm = true
             } label: {
-                Label("Reset to defaults", systemImage: "arrow.uturn.backward")
+                Label(loc(.kb_reset_defaults), systemImage: "arrow.uturn.backward")
             }
             .controlSize(.regular)
-            .help("Remove all your custom keybindings; restores Ghostty's defaults.")
+            .help(loc(.kb_reset_help))
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
     }
 
     private var emptyState: some View {
-        Text("No matches")
+        Text(loc(.kb_no_matches))
             .foregroundStyle(.secondaryText)
             .padding(.vertical, 32)
             .frame(maxWidth: .infinity)
@@ -229,7 +229,7 @@ struct KeybindsSectionView: View {
                         )
                 }
                 .buttonStyle(.plain)
-                .help("Add a shortcut for \(action.label)")
+                .help(loc(.kb_add_shortcut, action.label))
             }
         }
         .padding(.horizontal, 14)
@@ -261,7 +261,7 @@ struct KeybindsSectionView: View {
                 .stroke(Color.secondary.opacity(0.25), lineWidth: 1)
         )
         .foregroundStyle(.secondaryText)
-        .help("Fixed shortcut — can't be changed")
+        .help(loc(.kb_fixed_shortcut))
     }
 
     /// Editable chip for an app-level shortcut (AppKeybindStore-backed).
@@ -281,7 +281,7 @@ struct KeybindsSectionView: View {
             }
             .buttonStyle(.plain)
             .padding(.leading, 2)
-            .help("Remove this shortcut")
+            .help(loc(.kb_remove_shortcut))
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 3)
@@ -317,7 +317,7 @@ struct KeybindsSectionView: View {
             }
             .buttonStyle(.plain)
             .padding(.leading, 2)
-            .help("Remove this shortcut")
+            .help(loc(.kb_remove_shortcut))
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 3)

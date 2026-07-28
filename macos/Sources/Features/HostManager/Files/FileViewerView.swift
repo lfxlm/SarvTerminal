@@ -145,6 +145,8 @@ struct FileViewerView: View {
     @ObservedObject var model: FileViewerModel
     let onClose: () -> Void
 
+    @ObservedObject private var lang = AppLanguageSettings.shared
+
     @StateObject private var find = FileFindSession()
 
     var body: some View {
@@ -184,8 +186,8 @@ struct FileViewerView: View {
 
             if model.isMarkdown {
                 Picker("", selection: $model.renderMarkdown) {
-                    Text("Rendered").tag(true)
-                    Text("Raw").tag(false)
+                    Text(loc(.rendered)).tag(true)
+                    Text(loc(.raw)).tag(false)
                 }
                 .pickerStyle(.segmented).labelsHidden().frame(width: 150)
             }
@@ -197,19 +199,19 @@ struct FileViewerView: View {
                     Task { await model.save(); if model.error == nil { model.isEditing = false } }
                 } label: {
                     if model.isSaving { ProgressView().controlSize(.small) }
-                    else { Label("Save changes", systemImage: "checkmark.circle.fill") }
+                    else { Label(loc(.save_changes), systemImage: "checkmark.circle.fill") }
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
                 .keyboardShortcut("s", modifiers: .command)
-                .hoverTip("Save changes (⌘S)")
+                .hoverTip(loc(.save_changes_tip))
             } else if !(model.isMarkdown && model.renderMarkdown) {
                 Button { model.isEditing = true } label: {
-                    Label("Edit", systemImage: "square.and.pencil")
+                    Label(loc(.edit_file), systemImage: "square.and.pencil")
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
-                .hoverTip("Edit file")
+                .hoverTip(loc(.edit_file))
             }
 
             // Language menu for syntax highlighting (code view only). A pull-down
@@ -233,36 +235,36 @@ struct FileViewerView: View {
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
-                .hoverTip("Syntax highlighting")
+                .hoverTip(loc(.syntax_highlighting))
             }
 
             // Indent width (Tab inserts this many spaces) — edit mode only.
             if model.isEditing {
                 Menu {
                     Button { model.indentWidth = 2 } label: {
-                        if model.indentWidth == 2 { Label("2 spaces", systemImage: "checkmark") } else { Text("2 spaces") }
+                        if model.indentWidth == 2 { Label(loc(.spaces_2), systemImage: "checkmark") } else { Text(loc(.spaces_2)) }
                     }
                     Button { model.indentWidth = 4 } label: {
-                        if model.indentWidth == 4 { Label("4 spaces", systemImage: "checkmark") } else { Text("4 spaces") }
+                        if model.indentWidth == 4 { Label(loc(.spaces_4), systemImage: "checkmark") } else { Text(loc(.spaces_4)) }
                     }
                 } label: {
-                    Text("Indent: \(model.indentWidth)").font(.system(size: 12))
+                    Text("\(loc(.indent)): \(model.indentWidth)").font(.system(size: 12))
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
-                .hoverTip("Indent width")
+                .hoverTip(loc(.indent))
             }
 
             Menu {
-                Button("Find…") { find.toggle() }.keyboardShortcut("f", modifiers: .command)
-                Toggle("Word wrap", isOn: $model.wordWrap)
+                Button(loc(.find)) { find.toggle() }.keyboardShortcut("f", modifiers: .command)
+                Toggle(loc(.word_wrap), isOn: $model.wordWrap)
                 Divider()
-                Button("Refresh file") { Task { await model.load() } }
+                Button(loc(.refresh_file)) { Task { await model.load() } }
                 if let url = model.localURL {
-                    Button("Open in editor") { NSWorkspace.shared.open(url) }
-                    Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+                    Button(loc(.open_in_editor)) { NSWorkspace.shared.open(url) }
+                    Button(loc(.reveal_in_finder)) { NSWorkspace.shared.activateFileViewerSelecting([url]) }
                 }
-                Button("Copy file path") {
+                Button(loc(.copy_file_path)) {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(model.item.path, forType: .string)
                 }
@@ -272,10 +274,10 @@ struct FileViewerView: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
-            .hoverTip("More")
+            .hoverTip(loc(.more))
 
             Button { onClose() } label: { Image(systemName: "xmark") }
-                .buttonStyle(.plain).hoverTip("Close")
+                .buttonStyle(.plain).hoverTip(loc(.close))
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
         .background(Color(NSColor.windowBackgroundColor))
@@ -284,7 +286,7 @@ struct FileViewerView: View {
     @ViewBuilder
     private var content: some View {
         if model.isLoading {
-            VStack { ProgressView(); Text("Loading…").font(.caption).foregroundStyle(.secondaryText) }
+            VStack { ProgressView(); Text(loc(.loading)).font(.caption).foregroundStyle(.secondaryText) }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let error = model.error {
             VStack(spacing: 8) {
@@ -307,19 +309,20 @@ struct FileViewerView: View {
 private struct FindBar: View {
     @ObservedObject var find: FileFindSession
     @FocusState private var focused: Bool
+    @ObservedObject private var lang = AppLanguageSettings.shared
 
     private var countLabel: String {
         if find.query.isEmpty { return "" }
         if find.countKnown {
-            return find.total == 0 ? "No results" : "\(find.current)/\(find.total)"
+            return find.total == 0 ? loc(.no_results) : "\(find.current)/\(find.total)"
         }
-        return find.total == 0 ? "No results" : ""
+        return find.total == 0 ? loc(.no_results) : ""
     }
 
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass").font(.system(size: 12)).foregroundStyle(.secondaryText)
-            TextField("Find", text: $find.query)
+            TextField(loc(.find), text: $find.query)
                 .textFieldStyle(.plain)
                 .frame(width: 180)
                 .focused($focused)
@@ -332,11 +335,11 @@ private struct FindBar: View {
                 .frame(minWidth: 56, alignment: .trailing)
 
             Button { find.run(forward: false) } label: { Image(systemName: "chevron.up") }
-                .buttonStyle(.plain).disabled(find.query.isEmpty).hoverTip("Previous")
+                .buttonStyle(.plain).disabled(find.query.isEmpty).hoverTip(loc(.previous))
             Button { find.run(forward: true) } label: { Image(systemName: "chevron.down") }
-                .buttonStyle(.plain).disabled(find.query.isEmpty).hoverTip("Next")
+                .buttonStyle(.plain).disabled(find.query.isEmpty).hoverTip(loc(.next))
             Button { find.close() } label: { Image(systemName: "xmark") }
-                .buttonStyle(.plain).hoverTip("Close (esc)")
+                .buttonStyle(.plain).hoverTip(loc(.close_find))
         }
         .padding(.horizontal, 10).padding(.vertical, 6)
         .background(RoundedRectangle(cornerRadius: 8).fill(Color(NSColor.windowBackgroundColor)))

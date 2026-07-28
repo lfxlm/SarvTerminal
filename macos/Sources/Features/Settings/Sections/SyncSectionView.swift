@@ -76,17 +76,17 @@ struct SyncSectionView: View {
     // MARK: - Enable
 
     private var enableCard: some View {
-        SettingsCard(title: "Sync") {
-            row("Settings Sync") {
+        SettingsCard(title: loc(.syn_enable)) {
+            row(loc(.syn_enable)) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Toggle("Enable encrypted sync", isOn: $settings.enabled)
+                    Toggle(loc(.syn_enable), isOn: $settings.enabled)
                         .toggleStyle(.switch)
-                    Text("Back up your terminal customization, keybinds, and saved hosts — encrypted with a master password — to GitHub or a synced folder.")
+                    Text(loc(.syn_enable_desc))
                         .font(.caption).foregroundStyle(.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                     HStack(alignment: .top, spacing: 5) {
                         Image(systemName: "lock.display")
-                        Text("Secure Keyboard Entry (in the app menu) is a per-machine security setting and is **not** synced.")
+                        Text(loc(.syn_secure_entry))
                     }
                     .font(.caption).foregroundStyle(.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
@@ -98,10 +98,10 @@ struct SyncSectionView: View {
     // MARK: - Version history (folder provider)
 
     private var historyCard: some View {
-        SettingsCard(title: "Version History") {
-            row("Keep history") {
+        SettingsCard(title: loc(.syn_history)) {
+            row(loc(.syn_keep_history)) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Toggle("Save a snapshot on every sync", isOn: $settings.historyEnabled)
+                    Toggle(loc(.syn_keep_history), isOn: $settings.historyEnabled)
                         .toggleStyle(.checkbox)
                     Text("Keeps recoverable versions in a `history/` folder so you can roll back. On by default — all versions are kept.")
                         .font(.caption).foregroundStyle(.secondaryText)
@@ -110,10 +110,10 @@ struct SyncSectionView: View {
             }
             if settings.historyEnabled {
                 divider
-                row("Versions to keep") {
+                row(loc(.syn_versions_to_keep)) {
                     VStack(alignment: .leading, spacing: 4) {
                         HStack(spacing: 8) {
-                            Text(settings.historyKeepCount == 0 ? "Unlimited" : "\(settings.historyKeepCount)")
+                            Text(settings.historyKeepCount == 0 ? loc(.syn_unlimited) : "\(settings.historyKeepCount)")
                                 .monospacedDigit()
                                 .frame(minWidth: 64, alignment: .leading)
                             Stepper("", value: $settings.historyKeepCount, in: 0...200)
@@ -132,8 +132,8 @@ struct SyncSectionView: View {
     // MARK: - Provider
 
     private var providerCard: some View {
-        SettingsCard(title: "Where to store") {
-            row("Provider") {
+        SettingsCard(title: loc(.syn_where_to_store)) {
+            row(loc(.syn_provider)) {
                 Picker("", selection: $draftProvider) {
                     ForEach(SyncProviderKind.allCases) { Text($0.label).tag($0) }
                 }
@@ -142,7 +142,7 @@ struct SyncSectionView: View {
             divider
             switch draftProvider {
             case .github:
-                row("Repository URL") {
+                row(loc(.syn_repo_url)) {
                     VStack(alignment: .leading, spacing: 4) {
                         TextField("https://github.com/owner/repo", text: $draftGithubURL)
                             .textFieldStyle(.roundedBorder).frame(maxWidth: 320)
@@ -151,7 +151,7 @@ struct SyncSectionView: View {
                     }
                 }
                 divider
-                row("Access token") {
+                row(loc(.syn_access_token)) {
                     VStack(alignment: .leading, spacing: 4) {
                         SecureField(SyncKeychain.hasPAT() ? "•••••••• (saved — type to replace)" : "ghp_… personal access token",
                                     text: $patField)
@@ -161,14 +161,14 @@ struct SyncSectionView: View {
                     }
                 }
             case .folder:
-                row("Folder") {
+                row(loc(.syn_folder)) {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(spacing: 8) {
-                            Text(draftFolderPath.isEmpty ? "No folder chosen" : draftFolderPath)
+                            Text(draftFolderPath.isEmpty ? loc(.syn_no_folder) : draftFolderPath)
                                 .font(.callout)
                                 .foregroundStyle(draftFolderPath.isEmpty ? .secondary : .primary)
                                 .lineLimit(1).truncationMode(.middle)
-                            Button("Choose…") { chooseFolder() }
+                            Button(loc(.syn_choose)) { chooseFolder() }
                                 .controlSize(.small)
                         }
                         Text("Pick a folder your system already syncs (iCloud Drive, Dropbox, Google Drive, …).")
@@ -182,28 +182,28 @@ struct SyncSectionView: View {
     // MARK: - Encryption / master password
 
     private var encryptionCard: some View {
-        SettingsCard(title: "Encryption") {
+        SettingsCard(title: loc(.syn_encryption)) {
             if SyncKeychain.hasMasterPassword() {
-                row("Master password") {
+                row(loc(.syn_master_password)) {
                     HStack(spacing: 8) {
                         Label("Set — stored in Keychain", systemImage: "checkmark.shield.fill")
                             .foregroundStyle(.green).font(.callout)
                         Spacer()
-                        Button("Change…") { SyncKeychain.deleteMasterPassword(); bump() }
+                        Button(loc(.syn_change)) { SyncKeychain.deleteMasterPassword(); bump() }
                             .controlSize(.small)
                     }
                 }
             } else {
-                row("Master password") {
+                row(loc(.syn_master_password)) {
                     SecureField("Choose a strong password", text: $masterPassword)
                         .textFieldStyle(.roundedBorder).frame(maxWidth: 280)
                 }
                 divider
-                row("Confirm") {
+                row(loc(.syn_confirm)) {
                     HStack(spacing: 8) {
                         SecureField("Re-enter password", text: $masterPasswordConfirm)
                             .textFieldStyle(.roundedBorder).frame(maxWidth: 280)
-                        Button("Set") { setMasterPassword() }
+                        Button(loc(.syn_set)) { setMasterPassword() }
                             .controlSize(.small)
                             .disabled(masterPassword.isEmpty || masterPassword != masterPasswordConfirm)
                     }
@@ -223,8 +223,8 @@ struct SyncSectionView: View {
     // MARK: - Status
 
     private var statusCard: some View {
-        SettingsCard(title: "Status") {
-            row("State") {
+        SettingsCard(title: loc(.syn_status)) {
+            row(loc(.syn_state)) {
                 HStack(spacing: 8) {
                     Circle().fill(statusColor).frame(width: 8, height: 8)
                     Text(statusText).font(.callout)
@@ -232,10 +232,10 @@ struct SyncSectionView: View {
             }
             if case .remoteNewer = settings.status {
                 divider
-                row("Update available") {
+                row(loc(.syn_update_available)) {
                     HStack(spacing: 8) {
                         Text("A newer version is in the remote.").font(.callout).foregroundStyle(.secondaryText)
-                        Button("Pull now") { run("Pulled", onSuccess: promptRestartAfterPull) { try await SyncEngine.pull(masterPassword: $0) } }
+                        Button(loc(.syn_pull_now)) { run("Pulled", onSuccess: promptRestartAfterPull) { try await SyncEngine.pull(masterPassword: $0) } }
                             .controlSize(.small)
                     }
                 }
@@ -285,18 +285,18 @@ struct SyncSectionView: View {
                     .font(.caption).foregroundStyle(.orange)
             }
             HStack(spacing: 10) {
-                Button("Test Connection") {
+                Button(loc(.syn_test_connection)) {
                     runNoPassword("Connection OK") { try await buildDraftProvider().testConnection() }
                 }
                 if busy { ProgressView().controlSize(.small).padding(.leading, 4) }
                 Spacer()
-                Button("Pull") { run("Pulled", onSuccess: promptRestartAfterPull) { try await SyncEngine.pull(masterPassword: $0) } }
-                Button("Sync ↑") { run("Synced") { _ = try await SyncEngine.push(masterPassword: $0, force: true) } }
+                Button(loc(.syn_pull)) { run("Pulled", onSuccess: promptRestartAfterPull) { try await SyncEngine.pull(masterPassword: $0) } }
+                Button(loc(.syn_sync_up)) { run("Synced") { _ = try await SyncEngine.push(masterPassword: $0, force: true) } }
                     .disabled(mustPullFirst)
                     .help(mustPullFirst
                           ? "The remote has newer data this device hasn't pulled yet. Press Pull first, then you can sync."
                           : "Force-upload this device's settings, overwriting the remote.")
-                Button("Save") { save() }.keyboardShortcut(.defaultAction)
+                Button(loc(.syn_save)) { save() }.keyboardShortcut(.defaultAction)
             }
             .disabled(busy)
             .controlSize(.large)
@@ -429,8 +429,8 @@ struct SyncSectionView: View {
             title: "Sync Complete",
             message: "Your settings were pulled from \(settings.provider.label).\n\nFor all changes to fully take effect, restarting SarvTerminal is recommended.",
             buttons: [
-                SarvAlert.Button("Restart Now", isDefault: true),
-                SarvAlert.Button("Later", isCancel: true),
+                SarvAlert.Button(loc(.syn_restart_now), isDefault: true),
+                SarvAlert.Button(loc(.syn_later), isCancel: true),
             ]
         ) { result in
             if result.buttonIndex == 0 { AppRelaunch.now() }

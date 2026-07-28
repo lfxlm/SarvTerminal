@@ -10,6 +10,8 @@ struct SFTPWindowView: View {
     @StateObject private var leftTabs = SFTPTabGroup()
     @StateObject private var rightTabs = SFTPTabGroup()
 
+    @ObservedObject private var lang = AppLanguageSettings.shared
+
     /// Optional remote host to pre-connect on the right pane (used by the side
     /// panel). When nil, the standalone window starts with both panes empty.
     let initialRemoteHost: SavedHost?
@@ -98,10 +100,10 @@ struct SFTPWindowView: View {
         .onChange(of: newFolderSide) { side in
             guard let side else { return }
             SarvAlert.present(
-                title: "New Folder",
+                title: loc(.new_folder_title),
                 buttons: [
-                    .init("Create", isDefault: true),
-                    .init("Cancel", isCancel: true),
+                    .init(loc(.create), isDefault: true),
+                    .init(loc(.cancel), isCancel: true),
                 ],
                 inputInitial: "") { result in
                 if result.buttonIndex == 0, !result.inputText.isEmpty {
@@ -113,10 +115,10 @@ struct SFTPWindowView: View {
         .onChange(of: renameTarget?.item.name) { _ in
             guard let target = renameTarget else { return }
             SarvAlert.present(
-                title: "Rename",
+                title: loc(.rename_title),
                 buttons: [
-                    .init("Rename", isDefault: true),
-                    .init("Cancel", isCancel: true),
+                    .init(loc(.rename), isDefault: true),
+                    .init(loc(.cancel), isCancel: true),
                 ],
                 inputInitial: renameText) { result in
                 if result.buttonIndex == 0, !result.inputText.isEmpty {
@@ -146,16 +148,16 @@ struct SFTPWindowView: View {
             guard let d = pendingDeletion else { return }
             let names = d.items.map(\.name)
             if names.count == 1 {
-                DeleteConfirmation.confirm(names[0], detail: "This can't be undone.") { confirmed in
+                DeleteConfirmation.confirm(names[0], detail: loc(.delete_confirm_detail)) { confirmed in
                     if confirmed { Task { await performDelete(d.items, model: model(d.side)) } }
                 }
             } else {
                 SarvAlert.present(
-                    title: "Delete \(names.count) items?",
-                    message: "Are you sure you want to delete \(names.count) items? This can't be undone.",
+                    title: String(format: loc(.delete_multi_title), names.count),
+                    message: String(format: loc(.delete_multi_message), names.count),
                     buttons: [
-                        .init("Delete", isDefault: true, isDestructive: true),
-                        .init("Cancel", isCancel: true),
+                        .init(loc(.delete), isDefault: true, isDestructive: true),
+                        .init(loc(.cancel), isCancel: true),
                     ]
                 ) { result in
                     if result.buttonIndex == 0 {
@@ -208,7 +210,7 @@ struct SFTPWindowView: View {
                     .frame(width: 20, height: 20)
             }
             .buttonStyle(.plain)
-            .help("Connect to host…")
+            .help(loc(.connect_to_host))
             .padding(.trailing, 4)
         }
     }
@@ -225,7 +227,7 @@ struct SFTPWindowView: View {
                 .lineLimit(1)
                 .fixedSize()
 
-            if tab.title != "Local" {
+            if tab.title != loc(.local) {
                 Button(action: onClose) {
                     Image(systemName: "xmark")
                         .font(.system(size: 8, weight: .bold))
@@ -254,10 +256,10 @@ struct SFTPWindowView: View {
             Image(systemName: "tray")
                 .font(.system(size: 28))
                 .foregroundStyle(.tertiaryText)
-            Text("No connection")
+            Text(loc(.no_connection))
                 .font(.callout)
                 .foregroundStyle(.secondaryText)
-            Button("Connect to host…") { hostPickerSide = side }
+            Button(loc(.connect_to_host)) { hostPickerSide = side }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
         }

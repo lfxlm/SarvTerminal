@@ -13,6 +13,8 @@ struct FilePaneView: View {
     /// Label for the "copy / download" context menu action.
     var copyActionLabel: String = "Copy to target directory"
 
+    @ObservedObject private var lang = AppLanguageSettings.shared
+
     /// Editable copy of the current path (synced from `model.path`).
     @State private var pathEdit: String = ""
     @State private var pathEditing = false
@@ -61,9 +63,9 @@ struct FilePaneView: View {
     private var toolbar: some View {
         HStack(spacing: 8) {
             Button { model.goBack() } label: { Image(systemName: "chevron.left") }
-                .buttonStyle(.plain).disabled(!model.canGoBack).hoverTip("Back")
+                .buttonStyle(.plain).disabled(!model.canGoBack).hoverTip(loc(.back_tooltip))
             Button { model.goForward() } label: { Image(systemName: "chevron.right") }
-                .buttonStyle(.plain).disabled(!model.canGoForward).hoverTip("Forward")
+                .buttonStyle(.plain).disabled(!model.canGoForward).hoverTip(loc(.forward_tooltip))
 
             if showHostPicker {
                 Button { onAction(.chooseHost) } label: {
@@ -75,7 +77,7 @@ struct FilePaneView: View {
                     .padding(.horizontal, 8).padding(.vertical, 4)
                     .background(RoundedRectangle(cornerRadius: 6).fill(Color.secondary.opacity(0.12)))
                 }
-                .buttonStyle(.plain).hoverTip("Change host / Local")
+                .buttonStyle(.plain).hoverTip(loc(.change_host_tooltip))
             }
 
             breadcrumbBar
@@ -83,12 +85,12 @@ struct FilePaneView: View {
             // Filter the current directory.
             HStack(spacing: 4) {
                 Image(systemName: "magnifyingglass").font(.system(size: 10)).foregroundStyle(.secondaryText)
-                TextField("Search", text: $model.search).textFieldStyle(.plain).font(.system(size: 11))
+                TextField(loc(.search_files), text: $model.search).textFieldStyle(.plain).font(.system(size: 11))
                     .frame(width: 110)
             }
             .padding(.horizontal, 6).padding(.vertical, 3)
             .background(RoundedRectangle(cornerRadius: 5).fill(Color.secondary.opacity(0.08)))
-            .hoverTip("Filter files in this folder")
+            .hoverTip(loc(.filter_files))
 
             if model.isLoading { ProgressView().controlSize(.small) }
 
@@ -98,15 +100,15 @@ struct FilePaneView: View {
                     .foregroundStyle(hasBookmarkForCurrentDir ? Color.accentColor : Color.secondary)
             }
             .buttonStyle(.plain)
-            .hoverTip("Bookmarks")
+            .hoverTip(loc(.bookmarks_tooltip))
             .popover(isPresented: $showBookmarks, arrowEdge: .bottom) {
                 bookmarkPopover
             }
 
             Button { onAction(.newFolder) } label: { Image(systemName: "folder.badge.plus") }
-                .buttonStyle(.plain).hoverTip("New Folder")
+                .buttonStyle(.plain).hoverTip(loc(.new_folder_tooltip))
             Button { onAction(.refresh) } label: { Image(systemName: "arrow.clockwise") }
-                .buttonStyle(.plain).hoverTip("Refresh")
+                .buttonStyle(.plain).hoverTip(loc(.refresh_tooltip))
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
     }
@@ -141,7 +143,7 @@ struct FilePaneView: View {
                     .onChange(of: model.path) { _ in scrollToLast(proxy) }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .hoverTip("Double-click to type a path")
+                .hoverTip(loc(.double_click_path))
             }
 
             // Toggles between breadcrumb and path-entry; the icon reflects what a
@@ -151,7 +153,7 @@ struct FilePaneView: View {
                     .font(.system(size: 11))
             }
             .buttonStyle(.plain)
-            .hoverTip(pathEditing ? "Show breadcrumb (Esc)" : "Type a path — or double-click the bar")
+            .hoverTip(pathEditing ? loc(.show_breadcrumb) : loc(.type_path))
         }
         .padding(.horizontal, 7).padding(.vertical, 3)
         .frame(maxWidth: .infinity)
@@ -210,13 +212,13 @@ struct FilePaneView: View {
 
     private var columnHeader: some View {
         HStack(spacing: 10) {
-            sortHeader("Name", .name).frame(maxWidth: .infinity, alignment: .leading)
+            sortHeader(loc(.name_column), .name).frame(maxWidth: .infinity, alignment: .leading)
             if !compact {
-                sortHeader("Date Modified", .date).frame(width: effectiveDateW, alignment: .leading)
+                sortHeader(loc(.date_column), .date).frame(width: effectiveDateW, alignment: .leading)
             }
-            sortHeader("Size", .size).frame(width: effectiveSizeW, alignment: .trailing)
+            sortHeader(loc(.size_column), .size).frame(width: effectiveSizeW, alignment: .trailing)
             if !compact {
-                sortHeader("Kind", .kind).frame(width: effectiveKindW, alignment: .leading)
+                sortHeader(loc(.kind_column), .kind).frame(width: effectiveKindW, alignment: .leading)
             }
         }
         .padding(.horizontal, 12).padding(.vertical, 6)
@@ -235,7 +237,7 @@ struct FilePaneView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .hoverTip("Sort by \(title)")
+        .hoverTip(String(format: loc(.sort_by), title))
     }
 
     // MARK: List
@@ -254,8 +256,8 @@ struct FilePaneView: View {
             }
         }
         .contextMenu {
-            Button("New Folder") { onAction(.newFolder) }
-            Button("Refresh") { onAction(.refresh) }
+            Button(loc(.new_folder)) { onAction(.newFolder) }
+            Button(loc(.refresh)) { onAction(.refresh) }
         }
     }
 
@@ -275,7 +277,7 @@ struct FilePaneView: View {
         .padding(.horizontal, 12).padding(.vertical, 6)
         .contentShape(Rectangle())
         .onTapGesture(count: 2) { onAction(.goUp) }
-        .hoverTip("Parent folder")
+        .hoverTip(loc(.parent_folder))
     }
 
     /// File name with the current search term highlighted for visibility.
@@ -303,7 +305,7 @@ struct FilePaneView: View {
 
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("Bookmarks")
+                Text(loc(.bookmarks_title))
                     .font(.system(size: 12, weight: .semibold))
                 Spacer()
                 if !hasBookmarkForCurrentDir {
@@ -311,13 +313,13 @@ struct FilePaneView: View {
                         Image(systemName: "plus")
                     }
                     .buttonStyle(.plain)
-                    .help("Add current directory")
+                    .help(loc(.add_current_dir))
                 }
             }
             .padding(.horizontal, 12).padding(.vertical, 8)
 
             if list.isEmpty {
-                Text("No bookmarks yet")
+                Text(loc(.no_bookmarks_yet))
                     .font(.caption)
                     .foregroundStyle(.secondaryText)
                     .padding(.horizontal, 12).padding(.vertical, 10)
@@ -367,7 +369,7 @@ struct FilePaneView: View {
                     .foregroundStyle(.tertiaryText)
             }
             .buttonStyle(.plain)
-            .help("Remove bookmark")
+            .help(loc(.remove_bookmark))
         }
         .padding(.horizontal, 12).padding(.vertical, 6)
         .contentShape(Rectangle())
@@ -424,28 +426,30 @@ struct FilePaneView: View {
         })
         .contextMenu {
             if !item.isDirectory {
-                Button("View") { onAction(.open(item)) }
+                Button(loc(.view)) { onAction(.open(item)) }
                 Divider()
             }
             if model.isSelected(item.id), model.selectedIDs.count > 1 {
-                Button("\(copyActionLabel) (\(model.selectedIDs.count) items)") {
+                Button("\(copyActionLabel) (\(model.selectedIDs.count) \(loc(.items)))") {
                     onAction(.copyToTarget(Array(model.selectedItems)))
                 }
-                Button("Delete \(model.selectedIDs.count) items", role: .destructive) {
+                Button("\(loc(.delete)) \(model.selectedIDs.count) \(loc(.items))", role: .destructive) {
                     onAction(.delete(Array(model.selectedItems)))
                 }
             } else {
                 Button(copyActionLabel) { onAction(.copyToTarget([item])) }
-                Button("Delete", role: .destructive) { onAction(.delete([item])) }
+                Button(loc(.delete), role: .destructive) { onAction(.delete([item])) }
             }
-            Button("Rename") { onAction(.rename(item)) }
+            Button(loc(.rename)) { onAction(.rename(item)) }
             Divider()
-            Button("Refresh") { onAction(.refresh) }
-            Button("New Folder") { onAction(.newFolder) }
-            Button("Edit Permissions") { onAction(.editPermissions(item)) }
+            Button(loc(.refresh)) { onAction(.refresh) }
+            Button(loc(.new_folder)) { onAction(.newFolder) }
+            Button(loc(.edit_permissions)) { onAction(.editPermissions(item)) }
         }
     }
 }
+
+// MARK: - FileHostChooser
 
 /// Termius-style host chooser: pick Local or a saved host for a pane.
 struct FileHostChooser: View {
@@ -454,6 +458,7 @@ struct FileHostChooser: View {
 
     @ObservedObject private var store = SavedHostsStore.shared
     @State private var search = ""
+    @ObservedObject private var lang = AppLanguageSettings.shared
 
     private var hosts: [SavedHost] {
         let q = search.trimmingCharacters(in: .whitespaces).lowercased()
@@ -466,26 +471,26 @@ struct FileHostChooser: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Text("Select Host").font(.headline)
+                Text(loc(.select_host)).font(.headline)
                 Spacer()
                 Button { onPick(.local) } label: {
-                    Label("Local", systemImage: "desktopcomputer")
+                    Label(loc(.local), systemImage: "desktopcomputer")
                 }
                 .buttonStyle(.borderedProminent)
-                Button("Cancel") { onCancel() }
+                Button(loc(.cancel)) { onCancel() }
             }
             .padding(14)
             Divider()
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondaryText)
-                TextField("Search hosts", text: $search).textFieldStyle(.plain)
+                TextField(loc(.search_hosts), text: $search).textFieldStyle(.plain)
             }
             .padding(.horizontal, 14).padding(.vertical, 8)
             Divider()
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 2) {
                     if hosts.isEmpty {
-                        Text("No saved hosts").foregroundStyle(.secondaryText).padding(20)
+                        Text(loc(.no_saved_hosts)).foregroundStyle(.secondaryText).padding(20)
                     }
                     ForEach(hosts) { host in
                         Button { onPick(.host(host)) } label: {
@@ -510,25 +515,29 @@ struct FileHostChooser: View {
     }
 }
 
+// MARK: - ConflictDialog
+
 /// "File already exists" conflict prompt (Stop / Skip / Replace / Duplicate / Merge).
 struct ConflictDialog: View {
     let name: String
     let onResolve: (ConflictResolution) -> Void
 
+    @ObservedObject private var lang = AppLanguageSettings.shared
+
     var body: some View {
         ZStack {
             Color.black.opacity(0.4).ignoresSafeArea()
             VStack(alignment: .leading, spacing: 18) {
-                Text("File already exists").font(.title3.weight(.semibold))
-                Text("An item named “\(name)” already exists in this location. Do you want to replace it with the one you are moving?")
+                Text(loc(.file_already_exists)).font(.title3.weight(.semibold))
+                Text(String(format: loc(.file_already_exists_detail), name))
                     .foregroundStyle(.secondaryText)
                 HStack(spacing: 10) {
-                    Button("Stop", role: .destructive) { onResolve(.stop) }
+                    Button(loc(.stop), role: .destructive) { onResolve(.stop) }
                         .buttonStyle(.borderedProminent).tint(.red)
-                    Button("Skip") { onResolve(.skip) }.buttonStyle(.plain)
-                    Button("Replace") { onResolve(.replace) }
-                    Button("Duplicate") { onResolve(.duplicate) }.buttonStyle(.borderedProminent)
-                    Button("Merge") { onResolve(.merge) }
+                    Button(loc(.skip)) { onResolve(.skip) }.buttonStyle(.plain)
+                    Button(loc(.replace)) { onResolve(.replace) }
+                    Button(loc(.duplicate)) { onResolve(.duplicate) }.buttonStyle(.borderedProminent)
+                    Button(loc(.merge)) { onResolve(.merge) }
                 }
             }
             .padding(24)

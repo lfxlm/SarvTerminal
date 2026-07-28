@@ -14,23 +14,23 @@ struct NotificationsSettingsView: View {
     }
 
     private var generalCard: some View {
-        SettingsCard(title: "Notifications") {
-            row("Enable") {
-                Toggle("Show macOS notifications for app events", isOn: $settings.enabled)
+        SettingsCard(title: loc(.n_notifications_card)) {
+            row(loc(.n_enable)) {
+                Toggle(loc(.n_enable_desc), isOn: $settings.enabled)
                     .toggleStyle(.checkbox)
             }
         }
     }
 
     private var soundCard: some View {
-        SettingsCard(title: "Sound") {
-            row("Alert sound") {
-                Toggle("Play a sound when a notification arrives", isOn: $settings.soundEnabled)
+        SettingsCard(title: loc(.n_sound_card)) {
+            row(loc(.n_alert_sound)) {
+                Toggle(loc(.n_play_sound), isOn: $settings.soundEnabled)
                     .toggleStyle(.checkbox)
                     .disabled(!settings.enabled)
             }
             divider
-            row("Sound") {
+            row(loc(.n_sound)) {
                 HStack(spacing: 8) {
                     Picker("", selection: .constant(0)) {
                         Text("Default").tag(0)
@@ -38,7 +38,7 @@ struct NotificationsSettingsView: View {
                     .labelsHidden().pickerStyle(.menu)
                     .fixedSize()
                     .disabled(true)
-                    .help("More sounds coming soon.")
+                    .help(loc(.n_more_sounds))
                     Button {
                         SarvNotifications.shared.previewSound()
                     } label: {
@@ -47,14 +47,14 @@ struct NotificationsSettingsView: View {
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(Color.accentColor)
-                    .help("Preview this sound")
+                    .help(loc(.n_preview))
                 }
             }
         }
     }
 
     private var eventsCard: some View {
-        SettingsCard(title: "Notify me about") {
+        SettingsCard(title: loc(.n_notify_about)) {
             ForEach(Array(SarvNotificationCategory.allCases.enumerated()), id: \.element.id) { index, category in
                 if index > 0 { divider }
                 row(category.label) {

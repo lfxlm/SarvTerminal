@@ -740,10 +740,10 @@ enum CursorStyleOption: String, CaseIterable, Identifiable, Hashable {
 
     var label: String {
         switch self {
-        case .block: return "Block"
-        case .bar: return "Bar (I-beam)"
-        case .underline: return "Underline"
-        case .blockHollow: return "Hollow Block"
+        case .block: return loc(.cursor_style_block)
+        case .bar: return loc(.cursor_style_bar)
+        case .underline: return loc(.cursor_style_underline)
+        case .blockHollow: return loc(.cursor_style_block_hollow)
         }
     }
 }
@@ -758,9 +758,9 @@ enum CursorBlinkOption: String, CaseIterable, Identifiable, Hashable {
 
     var label: String {
         switch self {
-        case .systemDefault: return "System default"
-        case .on: return "Always blink"
-        case .off: return "Don't blink"
+        case .systemDefault: return loc(.cursor_blink_default)
+        case .on: return loc(.cursor_blink_on)
+        case .off: return loc(.cursor_blink_off)
         }
     }
 }
@@ -811,9 +811,9 @@ enum ConfirmCloseOption: String, CaseIterable, Identifiable, Hashable {
     var id: String { rawValue }
     var label: String {
         switch self {
-        case .yes: return "If process is running"
-        case .no: return "Never"
-        case .always: return "Always"
+        case .yes: return loc(.confirm_close_yes)
+        case .no: return loc(.confirm_close_no)
+        case .always: return loc(.confirm_close_always)
         }
     }
 }
@@ -823,9 +823,9 @@ enum CopyOnSelectOption: String, CaseIterable, Identifiable, Hashable {
     var id: String { rawValue }
     var label: String {
         switch self {
-        case .off: return "Off"
-        case .on: return "Selection buffer only"
-        case .clipboard: return "System clipboard"
+        case .off: return loc(.copy_select_off)
+        case .on: return loc(.copy_select_selection)
+        case .clipboard: return loc(.copy_select_clipboard)
         }
     }
 }
@@ -835,9 +835,9 @@ enum ClipboardAccessOption: String, CaseIterable, Identifiable, Hashable {
     var id: String { rawValue }
     var label: String {
         switch self {
-        case .ask: return "Ask each time"
-        case .allow: return "Always allow"
-        case .deny: return "Always deny"
+        case .ask: return loc(.clipboard_ask)
+        case .allow: return loc(.clipboard_allow)
+        case .deny: return loc(.clipboard_deny)
         }
     }
 }
@@ -867,10 +867,10 @@ enum WindowDecorationOption: String, CaseIterable, Identifiable, Hashable {
     var id: String { rawValue }
     var label: String {
         switch self {
-        case .auto: return "Auto (per-platform)"
-        case .none: return "None"
-        case .server: return "Server (OS)"
-        case .client: return "Client (in-window)"
+        case .auto: return loc(.window_deco_auto)
+        case .none: return loc(.window_deco_none)
+        case .server: return loc(.window_deco_server)
+        case .client: return loc(.window_deco_client)
         }
     }
 }
@@ -880,9 +880,9 @@ enum WindowSaveStateOption: String, CaseIterable, Identifiable, Hashable {
     var id: String { rawValue }
     var label: String {
         switch self {
-        case .default: return "Default"
-        case .never: return "Never"
-        case .always: return "Always"
+        case .default: return loc(.save_state_default)
+        case .never: return loc(.save_state_never)
+        case .always: return loc(.save_state_always)
         }
     }
 }
@@ -906,10 +906,10 @@ enum MacosTitlebarStyleOption: String, CaseIterable, Identifiable, Hashable {
     var id: String { rawValue }
     var label: String {
         switch self {
-        case .native: return "Native"
-        case .transparent: return "Transparent (blends with background)"
-        case .tabs: return "Tabs in titlebar"
-        case .hidden: return "Hidden"
+        case .native: return loc(.titlebar_native)
+        case .transparent: return loc(.titlebar_transparent)
+        case .tabs: return loc(.titlebar_tabs)
+        case .hidden: return loc(.titlebar_hidden)
         }
     }
 }
@@ -919,8 +919,8 @@ enum MacosTitlebarProxyIconOption: String, CaseIterable, Identifiable, Hashable 
     var id: String { rawValue }
     var label: String {
         switch self {
-        case .visible: return "Visible"
-        case .hidden: return "Hidden"
+        case .visible: return loc(.proxy_visible)
+        case .hidden: return loc(.proxy_hidden)
         }
     }
 }
@@ -930,8 +930,8 @@ enum NewTabPositionOption: String, CaseIterable, Identifiable, Hashable {
     var id: String { rawValue }
     var label: String {
         switch self {
-        case .current: return "Right of current tab"
-        case .end: return "End of tab bar"
+        case .current: return loc(.new_tab_current)
+        case .end: return loc(.new_tab_end)
         }
     }
 }
@@ -956,13 +956,13 @@ enum ShellIntegrationOption: String, CaseIterable, Identifiable, Hashable {
     var id: String { rawValue }
     var label: String {
         switch self {
-        case .detect: return "Auto-detect"
-        case .none: return "Disabled"
-        case .bash: return "Bash"
-        case .zsh: return "Zsh"
-        case .fish: return "Fish"
-        case .elvish: return "Elvish"
-        case .nushell: return "Nushell"
+        case .detect: return loc(.shell_int_detect)
+        case .none: return loc(.shell_int_none)
+        case .bash: return loc(.shell_int_bash)
+        case .zsh: return loc(.shell_int_zsh)
+        case .fish: return loc(.shell_int_fish)
+        case .elvish: return loc(.shell_int_elvish)
+        case .nushell: return loc(.shell_int_nushell)
         }
     }
 }
@@ -1006,18 +1006,18 @@ extension ShellIntegrationFeature {
 }
 
 let kShellIntegrationFeatures: [ShellIntegrationFeature] = [
-    .init(tag: "cursor", label: "Cursor",
-          detail: "Restore cursor to a bar at the prompt.", defaultOn: true),
-    .init(tag: "sudo", label: "Sudo",
-          detail: "Wrap sudo to preserve terminfo.", defaultOn: false),
-    .init(tag: "title", label: "Title",
-          detail: "Update window title via shell integration.", defaultOn: true),
-    .init(tag: "ssh-env", label: "SSH env",
-          detail: "Forward TERM and color env vars over SSH.", defaultOn: true),
-    .init(tag: "ssh-terminfo", label: "SSH terminfo",
-          detail: "Install Ghostty's terminfo on remote hosts (off by default — TERM falls back to xterm-256color).", defaultOn: false),
-    .init(tag: "path", label: "PATH",
-          detail: "Add Ghostty's binary directory to PATH.", defaultOn: true),
+    .init(tag: "cursor", label: loc(.feature_cursor),
+          detail: loc(.feature_cursor_detail), defaultOn: true),
+    .init(tag: "sudo", label: loc(.feature_sudo),
+          detail: loc(.feature_sudo_detail), defaultOn: false),
+    .init(tag: "title", label: loc(.feature_title),
+          detail: loc(.feature_title_detail), defaultOn: true),
+    .init(tag: "ssh-env", label: loc(.feature_ssh_env),
+          detail: loc(.feature_ssh_env_detail), defaultOn: true),
+    .init(tag: "ssh-terminfo", label: loc(.feature_ssh_terminfo),
+          detail: loc(.feature_ssh_terminfo_detail), defaultOn: false),
+    .init(tag: "path", label: loc(.feature_path),
+          detail: loc(.feature_path_detail), defaultOn: true),
 ]
 
 /// `background-image-fit` config knob.
@@ -1031,10 +1031,10 @@ enum BackgroundImageFit: String, CaseIterable, Identifiable, Hashable {
 
     var label: String {
         switch self {
-        case .contain: return "Contain (fit inside)"
-        case .cover: return "Cover (fill, may crop)"
-        case .stretch: return "Stretch"
-        case .none: return "Original size"
+        case .contain: return loc(.fit_contain)
+        case .cover: return loc(.fit_cover)
+        case .stretch: return loc(.fit_stretch)
+        case .none: return loc(.fit_none)
         }
     }
 }
@@ -1055,15 +1055,15 @@ enum BackgroundImagePosition: String, CaseIterable, Identifiable, Hashable {
 
     var label: String {
         switch self {
-        case .topLeft: return "Top Left"
-        case .top: return "Top"
-        case .topRight: return "Top Right"
-        case .left: return "Left"
-        case .center: return "Center"
-        case .right: return "Right"
-        case .bottomLeft: return "Bottom Left"
-        case .bottom: return "Bottom"
-        case .bottomRight: return "Bottom Right"
+        case .topLeft: return loc(.img_pos_top_left)
+        case .top: return loc(.img_pos_top)
+        case .topRight: return loc(.img_pos_top_right)
+        case .left: return loc(.img_pos_left)
+        case .center: return loc(.img_pos_center)
+        case .right: return loc(.img_pos_right)
+        case .bottomLeft: return loc(.img_pos_bottom_left)
+        case .bottom: return loc(.img_pos_bottom)
+        case .bottomRight: return loc(.img_pos_bottom_right)
         }
     }
 }
@@ -1081,12 +1081,12 @@ enum BackgroundBlurOption: String, CaseIterable, Identifiable, Hashable {
 
     var label: String {
         switch self {
-        case .off: return "Off"
-        case .subtle: return "Subtle"
-        case .standard: return "Standard"
-        case .strong: return "Strong"
-        case .glassRegular: return "Liquid Glass (Regular)"
-        case .glassClear: return "Liquid Glass (Clear)"
+        case .off: return loc(.blur_off)
+        case .subtle: return loc(.blur_subtle)
+        case .standard: return loc(.blur_standard)
+        case .strong: return loc(.blur_strong)
+        case .glassRegular: return loc(.blur_glass_regular)
+        case .glassClear: return loc(.blur_glass_clear)
         }
     }
 
@@ -1133,11 +1133,11 @@ enum WindowThemeOption: String, CaseIterable, Identifiable, Hashable {
 
     var label: String {
         switch self {
-        case .system: return "Follow System"
-        case .light: return "Light"
-        case .dark: return "Dark"
-        case .auto: return "Auto (by background color)"
-        case .ghostty: return "Use Active Theme"
+        case .system: return loc(.theme_system)
+        case .light: return loc(.theme_light)
+        case .dark: return loc(.theme_dark)
+        case .auto: return loc(.theme_auto)
+        case .ghostty: return loc(.theme_ghostty)
         }
     }
 }
@@ -1178,7 +1178,7 @@ struct SidebarView: View {
                         .tag(section)
                 }
             } header: {
-                Text("Settings")
+                Text(loc(.settings_heading))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondaryText)
                     .textCase(.uppercase)
@@ -1193,7 +1193,7 @@ struct SidebarView: View {
         List {
             let results = viewModel.searchResults
             if results.isEmpty {
-                Text("No settings match “\(viewModel.searchText)”")
+                Text(loc(.no_settings_match, viewModel.searchText))
                     .font(.callout)
                     .foregroundStyle(.secondaryText)
                     .padding(.vertical, 8)
@@ -1226,7 +1226,7 @@ struct SidebarView: View {
                         .buttonStyle(.plain)
                     }
                 } header: {
-                    Text("\(results.count) result\(results.count == 1 ? "" : "s")")
+                    Text(loc(.search_results_label, results.count))
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondaryText)
                         .textCase(.uppercase)
@@ -1240,7 +1240,7 @@ struct SidebarView: View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondaryText)
-            TextField("Search settings", text: $viewModel.searchText)
+            TextField(loc(.search_settings), text: $viewModel.searchText)
                 .textFieldStyle(.plain)
             if !viewModel.searchText.isEmpty {
                 Button {
@@ -1350,7 +1350,7 @@ struct DetailView: View {
             Image(systemName: "sidebar.left")
                 .font(.system(size: 48))
                 .foregroundStyle(.tertiaryText)
-            Text("Select a settings section")
+            Text(loc(.select_settings_section))
                 .foregroundStyle(.secondaryText)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1403,11 +1403,11 @@ struct FooterBarView: View {
         .onChange(of: showResetConfirm) { show in
             guard show else { return }
             SarvAlert.present(
-                title: "Reset \(section?.title ?? "section") to defaults?",
-                message: "This restores every option in this section to its default value. You can undo it with Revert until you close Settings.",
+                title: loc(.reset_confirm_title, section?.title ?? ""),
+                message: loc(.reset_confirm_msg),
                 buttons: [
-                    .init("Reset to Default", isDefault: true, isDestructive: true),
-                    .init("Cancel", isCancel: true),
+                    .init(loc(.reset_to_default_button), isDefault: true, isDestructive: true),
+                    .init(loc(.cancel), isCancel: true),
                 ]) { result in
                 if result.buttonIndex == 0, let section { viewModel.resetToDefault(section: section) }
             }
@@ -1426,7 +1426,7 @@ struct FooterBarView: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
         } else if viewModel.showSavedFlash {
-            Label("Saved", systemImage: "checkmark.circle.fill")
+            Label(loc(.saved_label), systemImage: "checkmark.circle.fill")
                 .foregroundStyle(.green)
                 .font(.callout)
                 .transition(.opacity)
@@ -1463,39 +1463,39 @@ enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
 
     var title: String {
         switch self {
-        case .general: return "General"
-        case .importSettings: return "Import"
-        case .appearance: return "Appearance"
-        case .font: return "Font"
-        case .window: return "Window"
-        case .tabs: return "Tabs"
-        case .cursor: return "Cursor"
-        case .keybinds: return "Keybinds"
-        case .shellIntegration: return "Shell Integration"
-        case .sftp: return "SFTP"
-        case .sync: return "Sync"
-        case .ai: return "AI"
-        case .notifications: return "Notifications"
-        case .advanced: return "Advanced"
+        case .general: return loc(.settings_general)
+        case .importSettings: return loc(.settings_import)
+        case .appearance: return loc(.settings_appearance)
+        case .font: return loc(.settings_font)
+        case .window: return loc(.settings_window)
+        case .tabs: return loc(.settings_tabs)
+        case .cursor: return loc(.settings_cursor)
+        case .keybinds: return loc(.settings_keybinds)
+        case .shellIntegration: return loc(.settings_shell_integration)
+        case .sftp: return loc(.settings_sftp)
+        case .sync: return loc(.settings_sync)
+        case .ai: return loc(.settings_ai)
+        case .notifications: return loc(.settings_notifications)
+        case .advanced: return loc(.settings_advanced)
         }
     }
 
     var subtitle: String? {
         switch self {
-        case .general: return "Startup behaviour, default command, shell."
-        case .importSettings: return "Bring settings from another terminal."
-        case .appearance: return "Theme, colors, transparency, background."
-        case .font: return "Family, size, weight, ligatures, variations."
-        case .window: return "Decorations, size, padding, fullscreen."
-        case .tabs: return "Tab bar style, position, behavior."
-        case .cursor: return "Style, blinking, color, thickness."
-        case .keybinds: return "Keyboard shortcuts and key tables."
-        case .shellIntegration: return "Auto-cd, prompts, SSH features."
-        case .sftp: return "File transfer: save behavior, deletes, hidden files."
-        case .sync: return "Encrypted backup of your settings, keybinds, and hosts."
-        case .ai: return "Explain and fix failed commands with your own AI key."
-        case .notifications: return "Which events notify you, and the alert sound."
-        case .advanced: return "Raw config editor and power-user options."
+        case .general: return loc(.settings_general_sub)
+        case .importSettings: return loc(.settings_import_sub)
+        case .appearance: return loc(.settings_appearance_sub)
+        case .font: return loc(.settings_font_sub)
+        case .window: return loc(.settings_window_sub)
+        case .tabs: return loc(.settings_tabs_sub)
+        case .cursor: return loc(.settings_cursor_sub)
+        case .keybinds: return loc(.settings_keybinds_sub)
+        case .shellIntegration: return loc(.settings_shell_integration_sub)
+        case .sftp: return loc(.settings_sftp_sub)
+        case .sync: return loc(.settings_sync_sub)
+        case .ai: return loc(.settings_ai_sub)
+        case .notifications: return loc(.settings_notifications_sub)
+        case .advanced: return loc(.settings_advanced_sub)
         }
     }
 
@@ -1566,7 +1566,7 @@ private struct SectionPlaceholderView: View {
             HStack(spacing: 12) {
                 Image(systemName: "hammer")
                     .foregroundStyle(.orange)
-                Text("Coming next iteration")
+                    Text(loc(.coming_next_iteration))
                     .font(.headline)
             }
             .padding(.horizontal, 14)

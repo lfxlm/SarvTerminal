@@ -7,8 +7,11 @@ struct GeneralSectionView: View {
     @AppStorage(HostConnectClickMode.storageKey)
     private var hostsConnectClick: HostConnectClickMode = .double
 
+    @ObservedObject private var langSettings = AppLanguageSettings.shared
+
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
+            languageCard
             startupCard
             sessionCard
             behaviorCard
@@ -19,9 +22,22 @@ struct GeneralSectionView: View {
         }
     }
 
+    private var languageCard: some View {
+        SettingsCard(title: loc(.language)) {
+            row(loc(.language_description)) {
+                Picker("", selection: $langSettings.selected) {
+                    ForEach(AppLanguage.allCases) { lang in
+                        Text(lang.displayName).tag(lang)
+                    }
+                }
+                .labelsHidden().pickerStyle(.menu).frame(maxWidth: 200, alignment: .leading)
+            }
+        }
+    }
+
     private var hostsCard: some View {
-        SettingsCard(title: "Hosts") {
-            row("Hosts & sessions connect on") {
+        SettingsCard(title: loc(.g_hosts)) {
+            row(loc(.g_hosts_connect)) {
                 Picker("", selection: $hostsConnectClick) {
                     ForEach(HostConnectClickMode.allCases) { opt in
                         Text(opt.label).tag(opt)
@@ -33,9 +49,9 @@ struct GeneralSectionView: View {
     }
 
     private var sessionCard: some View {
-        SettingsCard(title: "Session") {
-            row("Restore tabs") {
-                Toggle("Reopen last session's tabs when SarvTerminal launches",
+        SettingsCard(title: loc(.g_session)) {
+            row(loc(.g_restore_tabs)) {
+                Toggle(loc(.g_restore_tabs_desc),
                        isOn: $restoreSession)
                     .toggleStyle(.checkbox)
             }
@@ -43,9 +59,9 @@ struct GeneralSectionView: View {
     }
 
     private var terminalCard: some View {
-        SettingsCard(title: "Terminal") {
-            row("Progress bar") {
-                Toggle("Show a running-command progress bar under the tab",
+        SettingsCard(title: loc(.g_terminal)) {
+            row(loc(.g_progress_bar)) {
+                Toggle(loc(.g_progress_bar_desc),
                        isOn: $viewModel.general.showProgressBar)
                     .toggleStyle(.checkbox)
             }
@@ -53,48 +69,48 @@ struct GeneralSectionView: View {
     }
 
     private var startupCard: some View {
-        SettingsCard(title: "Startup") {
-            row("Command") {
+        SettingsCard(title: loc(.g_startup)) {
+            row(loc(.g_command)) {
                 HStack(spacing: 8) {
-                    TextField("/bin/zsh, /opt/homebrew/bin/fish, …",
+                    TextField(loc(.g_command_placeholder),
                               text: $viewModel.general.command)
                         .textFieldStyle(.roundedBorder)
                         .frame(maxWidth: 360)
                         .font(.system(.body, design: .monospaced))
                     if !viewModel.general.command.isEmpty {
-                        Button("Reset") { viewModel.general.command = "" }
+                        Button(loc(.g_reset)) { viewModel.general.command = "" }
                             .controlSize(.small)
                     }
                 }
             }
             divider
-            row("Working directory") {
+            row(loc(.g_working_dir)) {
                 HStack(spacing: 8) {
-                    TextField("home, inherit, or a path", text: $viewModel.general.workingDirectory)
+                    TextField(loc(.g_wd_placeholder), text: $viewModel.general.workingDirectory)
                         .textFieldStyle(.roundedBorder)
                         .frame(maxWidth: 360)
                         .font(.system(.body, design: .monospaced))
                     if !viewModel.general.workingDirectory.isEmpty {
-                        Button("Reset") { viewModel.general.workingDirectory = "" }
+                        Button(loc(.g_reset)) { viewModel.general.workingDirectory = "" }
                             .controlSize(.small)
                     }
                 }
             }
             divider
-            row("New tab directory") {
+            row(loc(.g_new_tab_dir)) {
                 HStack(spacing: 8) {
-                    TextField("home (default), or a path", text: $newTabDirectory)
+                    TextField(loc(.g_ntd_placeholder), text: $newTabDirectory)
                         .textFieldStyle(.roundedBorder)
                         .frame(maxWidth: 360)
                         .font(.system(.body, design: .monospaced))
                     if !newTabDirectory.isEmpty {
-                        Button("Reset") { newTabDirectory = "" }
+                        Button(loc(.g_reset)) { newTabDirectory = "" }
                             .controlSize(.small)
                     }
                 }
             }
             divider
-            row("Confirm close") {
+            row(loc(.g_confirm_close)) {
                 Picker("", selection: $viewModel.general.confirmClose) {
                     ForEach(ConfirmCloseOption.allCases) { opt in
                         Text(opt.label).tag(opt)
@@ -103,8 +119,8 @@ struct GeneralSectionView: View {
                 .labelsHidden().pickerStyle(.menu).frame(maxWidth: 280, alignment: .leading)
             }
             divider
-            row("Quit after last window") {
-                Toggle("Quit Ghostty when the last window closes",
+            row(loc(.g_quit_last_window)) {
+                Toggle(loc(.g_quit_desc),
                        isOn: $viewModel.general.quitAfterLastWindowClosed)
                     .toggleStyle(.checkbox)
             }
@@ -112,20 +128,20 @@ struct GeneralSectionView: View {
     }
 
     private var behaviorCard: some View {
-        SettingsCard(title: "Mouse & Focus") {
-            row("Mouse") {
-                Toggle("Hide mouse pointer while typing",
+        SettingsCard(title: loc(.g_mouse_focus)) {
+            row(loc(.g_mouse)) {
+                Toggle(loc(.g_hide_mouse),
                        isOn: $viewModel.general.mouseHideWhileTyping)
                     .toggleStyle(.checkbox)
             }
             divider
-            row("Focus") {
-                Toggle("Focus follows mouse",
+            row(loc(.g_focus)) {
+                Toggle(loc(.g_focus_desc),
                        isOn: $viewModel.general.focusFollowsMouse)
                     .toggleStyle(.checkbox)
             }
             divider
-            row("Scroll speed") {
+            row(loc(.g_scroll_speed)) {
                 HStack(spacing: 12) {
                     Slider(value: $viewModel.general.mouseScrollMultiplier, in: 0.1...10, step: 0.1)
                         .frame(maxWidth: 280)
@@ -136,8 +152,8 @@ struct GeneralSectionView: View {
                 }
             }
             divider
-            row("Links") {
-                Toggle("Detect URLs (⌘-click to open)",
+            row(loc(.g_links)) {
+                Toggle(loc(.g_detect_urls),
                        isOn: $viewModel.general.linkURL)
                     .toggleStyle(.checkbox)
             }
@@ -145,8 +161,8 @@ struct GeneralSectionView: View {
     }
 
     private var clipboardCard: some View {
-        SettingsCard(title: "Clipboard") {
-            row("Copy on select") {
+        SettingsCard(title: loc(.g_clipboard_card)) {
+            row(loc(.g_copy_select)) {
                 Picker("", selection: $viewModel.general.copyOnSelect) {
                     ForEach(CopyOnSelectOption.allCases) { opt in
                         Text(opt.label).tag(opt)
@@ -155,7 +171,7 @@ struct GeneralSectionView: View {
                 .labelsHidden().pickerStyle(.menu).frame(maxWidth: 260, alignment: .leading)
             }
             divider
-            row("Clipboard read") {
+            row(loc(.g_clipboard_read)) {
                 Picker("", selection: $viewModel.general.clipboardRead) {
                     ForEach(ClipboardAccessOption.allCases) { opt in
                         Text(opt.label).tag(opt)
@@ -164,7 +180,7 @@ struct GeneralSectionView: View {
                 .labelsHidden().pickerStyle(.menu).frame(maxWidth: 200, alignment: .leading)
             }
             divider
-            row("Clipboard write") {
+            row(loc(.g_clipboard_write)) {
                 Picker("", selection: $viewModel.general.clipboardWrite) {
                     ForEach(ClipboardAccessOption.allCases) { opt in
                         Text(opt.label).tag(opt)
@@ -173,8 +189,8 @@ struct GeneralSectionView: View {
                 .labelsHidden().pickerStyle(.menu).frame(maxWidth: 200, alignment: .leading)
             }
             divider
-            row("Paste protection") {
-                Toggle("Warn before pasting multi-line text that could run commands",
+            row(loc(.g_paste_protection)) {
+                Toggle(loc(.g_paste_warn),
                        isOn: $viewModel.general.clipboardPasteProtection)
                     .toggleStyle(.checkbox)
             }
@@ -182,8 +198,8 @@ struct GeneralSectionView: View {
     }
 
     private var scrollbackCard: some View {
-        SettingsCard(title: "Scrollback") {
-            row("Buffer size") {
+        SettingsCard(title: loc(.g_scrollback)) {
+            row(loc(.g_buffer_size)) {
                 HStack(spacing: 12) {
                     Slider(value: $viewModel.general.scrollbackLimitMB, in: 1...100, step: 1)
                         .frame(maxWidth: 320)
@@ -195,12 +211,12 @@ struct GeneralSectionView: View {
                 }
             }
             divider
-            row("Compression") {
+            row(loc(.g_compression)) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Toggle("Compress idle scrollback to save memory",
+                    Toggle(loc(.g_compress_idle),
                            isOn: $viewModel.general.scrollbackCompression)
                         .toggleStyle(.checkbox)
-                    Text("Compresses off-screen history while the terminal is idle, cutting memory use. It's restored automatically when you scroll back.")
+                    Text(loc(.g_compress_desc))
                         .font(.caption).foregroundStyle(.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }

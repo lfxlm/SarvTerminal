@@ -49,8 +49,8 @@ struct AISectionView: View {
     // MARK: - Cards
 
     private var enableCard: some View {
-        SettingsCard(title: "AI Command Assist") {
-            settingsRow("Enable") {
+        SettingsCard(title: loc(.ai_command_assist)) {
+            settingsRow(loc(.ai_enable)) {
                 Toggle("", isOn: Binding(
                     get: { store.config.enabled },
                     set: { store.config.enabled = $0 }
@@ -59,7 +59,7 @@ struct AISectionView: View {
                 .toggleStyle(.switch)
             }
             SettingsDivider()
-            Text("When a command exits with a non-zero status, Sarv Terminal offers to explain the failure and suggest a fix using your chosen model.")
+            Text(loc(.ai_desc))
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -70,9 +70,9 @@ struct AISectionView: View {
     }
 
     private var providerCard: some View {
-        SettingsCard(title: "Provider & Model") {
+        SettingsCard(title: loc(.ai_provider_model)) {
             // Provider
-            settingsRow("Provider") {
+            settingsRow(loc(.ai_provider)) {
                 Picker("", selection: Binding(
                     get: { store.config.provider },
                     set: { store.config.provider = $0 }
@@ -89,26 +89,26 @@ struct AISectionView: View {
 
             // API key (cloud providers only)
             if provider.requiresAPIKey {
-                settingsRow("API key", alignment: .top) {
+                settingsRow(loc(.ai_api_key), alignment: .top) {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(spacing: 8) {
-                            SecureField(hasSavedKey ? "•••••• saved — type to replace" : "Paste your API key",
+                            SecureField(hasSavedKey ? loc(.ai_api_key_saved) : loc(.ai_api_key_placeholder),
                                         text: $keyDraft)
                                 .textFieldStyle(.roundedBorder)
                                 .frame(maxWidth: 280)
-                            Button("Save") { saveKey() }
+                            Button(loc(.ai_save_key)) { saveKey() }
                                 .disabled(keyDraft.trimmingCharacters(in: .whitespaces).isEmpty)
                             if hasSavedKey {
-                                Button("Clear") { clearKey() }
+                                Button(loc(.ai_clear_key)) { clearKey() }
                             }
                         }
-                        Label("Stored encrypted on this Mac. Never synced, backed up, or sent anywhere except \(provider.displayName).",
+                         Label(loc(.ai_stored_encrypted, provider.displayName),
                               systemImage: "lock.fill")
                             .font(.system(size: 10))
                             .foregroundStyle(.secondary)
                             .labelStyle(.titleAndIcon)
                         if let hint = provider.keyHint {
-                            Text("Get a key: \(hint)")
+                            Text(loc(.ai_get_key, hint))
                                 .font(.system(size: 10))
                                 .foregroundStyle(.secondary)
                         }
@@ -118,13 +118,13 @@ struct AISectionView: View {
             }
 
             // Model (dropdown fetched from the provider)
-            settingsRow("Model", alignment: .top) {
+            settingsRow(loc(.ai_model), alignment: .top) {
                 modelControl
             }
             SettingsDivider()
 
             // Endpoint (advanced)
-            settingsRow("Endpoint") {
+            settingsRow(loc(.ai_endpoint)) {
                 TextField(provider.defaultBaseURL, text: baseURLBinding)
                     .textFieldStyle(.roundedBorder)
                     .frame(maxWidth: 340)
@@ -132,7 +132,7 @@ struct AISectionView: View {
             SettingsDivider()
 
             // Test
-            settingsRow("Test", alignment: .center) {
+            settingsRow(loc(.ai_test), alignment: .center) {
                 testControl
             }
         }
@@ -164,7 +164,7 @@ struct AISectionView: View {
                         if loadingModels {
                             ProgressView().controlSize(.small)
                         } else {
-                            Text("Load models")
+                            Text(loc(.ai_load_models))
                         }
                     }
                     .disabled(loadingModels || store.currentSettings == nil)
@@ -186,7 +186,7 @@ struct AISectionView: View {
                     }
                     .buttonStyle(.borderless)
                     .disabled(loadingModels)
-                    .help("Refresh model list")
+                    .help(loc(.ai_refresh_models))
                 }
             }
             if let modelError {
@@ -194,7 +194,7 @@ struct AISectionView: View {
                     .font(.system(size: 10)).foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
             } else if provider.requiresAPIKey && !hasSavedKey {
-                Text("Save your API key to load the available models.")
+                Text(loc(.ai_save_key_hint))
                     .font(.system(size: 10)).foregroundStyle(.secondary)
             }
         }
@@ -210,10 +210,10 @@ struct AISectionView: View {
                 if testState == .testing {
                     HStack(spacing: 6) {
                         ProgressView().controlSize(.small)
-                        Text("Testing…")
+                        Text(loc(.ai_testing))
                     }
                 } else {
-                    Text("Send a test request")
+                    Text(loc(.ai_send_test))
                 }
             }
             .disabled(testState == .testing || store.currentSettings == nil)
@@ -222,7 +222,7 @@ struct AISectionView: View {
             case .idle, .testing:
                 EmptyView()
             case .ok:
-                Label("Working", systemImage: "checkmark.circle.fill")
+                Label(loc(.ai_working), systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green).font(.system(size: 12))
             case .failed(let msg):
                 Label(msg, systemImage: "xmark.octagon.fill")

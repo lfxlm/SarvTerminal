@@ -21,8 +21,8 @@ struct ShellIntegrationSectionView: View {
     }
 
     private var integrationCard: some View {
-        SettingsCard(title: "Integration") {
-            row("Shell") {
+        SettingsCard(title: loc(.si_integration)) {
+            row(loc(.si_shell)) {
                 Picker("", selection: $viewModel.shellIntegration.integration) {
                     ForEach(ShellIntegrationOption.allCases) { opt in
                         Text(opt.label).tag(opt)
@@ -34,7 +34,7 @@ struct ShellIntegrationSectionView: View {
     }
 
     private var featuresCard: some View {
-        SettingsCard(title: "Features") {
+        SettingsCard(title: loc(.si_features)) {
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(kShellIntegrationFeatures, id: \.tag) { feature in
                     featureRow(feature)

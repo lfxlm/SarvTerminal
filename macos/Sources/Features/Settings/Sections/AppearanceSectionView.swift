@@ -21,31 +21,31 @@ struct AppearanceSectionView: View {
     // MARK: - Colors card
 
     private var colorsCard: some View {
-        SettingsCard(title: "Colors") {
-            row("Foreground") {
+        SettingsCard(title: loc(.a_colors)) {
+            row(loc(.a_foreground)) {
                 ColorSwatchPicker(color: $viewModel.appearance.foregroundColor)
             }
             divider
             optionalColorRow(
-                label: "Cursor",
+                label: loc(.a_cursor_color),
                 useOverride: $viewModel.appearance.useCursorColor,
                 color: $viewModel.appearance.cursorColor
             )
             divider
             optionalColorRow(
-                label: "Selection FG",
+                label: loc(.a_selection_fg),
                 useOverride: $viewModel.appearance.useSelectionForeground,
                 color: $viewModel.appearance.selectionForeground
             )
             divider
             optionalColorRow(
-                label: "Selection BG",
+                label: loc(.a_selection_bg),
                 useOverride: $viewModel.appearance.useSelectionBackground,
                 color: $viewModel.appearance.selectionBackground
             )
             divider
             optionalColorRow(
-                label: "Bold text",
+                label: loc(.a_bold_text),
                 useOverride: $viewModel.appearance.useBoldColor,
                 color: $viewModel.appearance.boldColor
             )
@@ -59,10 +59,10 @@ struct AppearanceSectionView: View {
     ) -> some View {
         row(label) {
             HStack(spacing: 12) {
-                Toggle("Override", isOn: useOverride)
+                Toggle(loc(.a_override), isOn: useOverride)
                     .toggleStyle(.switch)
                     .labelsHidden()
-                Text(useOverride.wrappedValue ? "Custom" : "Default")
+                Text(useOverride.wrappedValue ? loc(.a_custom) : loc(.a_default))
                     .font(.callout)
                     .foregroundStyle(.secondaryText)
                     .frame(width: 60, alignment: .leading)
@@ -76,12 +76,12 @@ struct AppearanceSectionView: View {
     // MARK: - Background card
 
     private var backgroundCard: some View {
-        SettingsCard(title: "Background") {
-            row("Color") {
+        SettingsCard(title: loc(.a_background)) {
+            row(loc(.a_color)) {
                 ColorSwatchPicker(color: $viewModel.appearance.backgroundColor)
             }
             divider
-            row("Opacity") {
+            row(loc(.a_opacity)) {
                 HStack(spacing: 12) {
                     Slider(value: $viewModel.appearance.backgroundOpacity, in: 0...1)
                         .frame(maxWidth: 320)
@@ -93,7 +93,7 @@ struct AppearanceSectionView: View {
                 }
             }
             divider
-            row("Blur") {
+            row(loc(.a_blur)) {
                 Picker("", selection: $viewModel.appearance.backgroundBlur) {
                     ForEach(BackgroundBlurOption.availableOptions) { option in
                         Text(option.label).tag(option)
@@ -109,16 +109,16 @@ struct AppearanceSectionView: View {
     // MARK: - Background image card
 
     private var backgroundImageCard: some View {
-        SettingsCard(title: "Background Image") {
-            row("Image") {
+        SettingsCard(title: loc(.a_bg_image)) {
+            row(loc(.a_image)) {
                 imagePicker
             }
 
             divider
-            row("Display") {
+            row(loc(.a_display)) {
                 Picker("", selection: $viewModel.appearance.backgroundDisplayShared) {
-                    Text("Per-pane").tag(false)
-                    Text("Shared").tag(true)
+                    Text(loc(.a_per_pane)).tag(false)
+                    Text(loc(.a_shared)).tag(true)
                 }
                 .labelsHidden()
                 .pickerStyle(.segmented)
@@ -130,7 +130,7 @@ struct AppearanceSectionView: View {
             // knob that applies is how translucent the panes are.
             if viewModel.appearance.hasBackgroundImage && viewModel.appearance.backgroundDisplayShared {
                 divider
-                row("Image visibility") {
+                row(loc(.a_image_visibility)) {
                     HStack(spacing: 12) {
                         Slider(value: $viewModel.appearance.sharedImageVisibility, in: 0...1)
                             .frame(maxWidth: 320)
@@ -147,7 +147,7 @@ struct AppearanceSectionView: View {
             // when an image is selected — keeps the card compact when not in use.
             if viewModel.appearance.hasBackgroundImage && !viewModel.appearance.backgroundDisplayShared {
                 divider
-                row("Opacity") {
+                row(loc(.a_opacity)) {
                     HStack(spacing: 12) {
                         Slider(value: $viewModel.appearance.backgroundImageOpacity, in: 0...1)
                             .frame(maxWidth: 320)
@@ -159,7 +159,7 @@ struct AppearanceSectionView: View {
                     }
                 }
                 divider
-                row("Fit") {
+                row(loc(.a_fit)) {
                     Picker("", selection: $viewModel.appearance.backgroundImageFit) {
                         ForEach(BackgroundImageFit.allCases) { fit in
                             Text(fit.label).tag(fit)
@@ -170,7 +170,7 @@ struct AppearanceSectionView: View {
                     .frame(maxWidth: 280, alignment: .leading)
                 }
                 divider
-                row("Position") {
+                row(loc(.a_position)) {
                     Picker("", selection: $viewModel.appearance.backgroundImagePosition) {
                         ForEach(BackgroundImagePosition.allCases) { pos in
                             Text(pos.label).tag(pos)
@@ -181,8 +181,8 @@ struct AppearanceSectionView: View {
                     .frame(maxWidth: 200, alignment: .leading)
                 }
                 divider
-                row("Tile") {
-                    Toggle("Repeat image to fill", isOn: $viewModel.appearance.backgroundImageRepeat)
+                row(loc(.a_tile)) {
+                    Toggle(loc(.a_repeat_image), isOn: $viewModel.appearance.backgroundImageRepeat)
                         .toggleStyle(.checkbox)
                 }
             }
@@ -202,7 +202,7 @@ struct AppearanceSectionView: View {
                           : "photo")
                     Text(viewModel.appearance.hasBackgroundImage
                          ? (viewModel.appearance.backgroundImagePath as NSString).lastPathComponent
-                         : "Choose image…")
+                         : loc(.a_choose_image))
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
@@ -211,7 +211,7 @@ struct AppearanceSectionView: View {
             .controlSize(.regular)
 
             if viewModel.appearance.hasBackgroundImage {
-                Button("Remove") {
+                Button(loc(.a_remove)) {
                     viewModel.appearance.backgroundImagePath = ""
                 }
                 .controlSize(.regular)
@@ -221,7 +221,7 @@ struct AppearanceSectionView: View {
 
     private func pickBackgroundImage() {
         let panel = NSOpenPanel()
-        panel.title = "Choose Background Image"
+        panel.title = loc(.a_choose_bg_panel)
         panel.allowedContentTypes = [.image]
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
@@ -242,8 +242,8 @@ struct AppearanceSectionView: View {
     // MARK: - Theme card
 
     private var themeCard: some View {
-        SettingsCard(title: "Theme") {
-            row("Window theme") {
+        SettingsCard(title: loc(.a_theme_card)) {
+            row(loc(.a_window_theme)) {
                 Picker("", selection: $viewModel.appearance.windowTheme) {
                     ForEach(WindowThemeOption.allCases) { option in
                         Text(option.label).tag(option)
@@ -254,7 +254,7 @@ struct AppearanceSectionView: View {
                 .frame(maxWidth: 280, alignment: .leading)
             }
             divider
-            row("Theme") {
+            row(loc(.a_theme_row)) {
                 HStack(spacing: 8) {
                     ThemePicker(themeName: $viewModel.appearance.themeName)
                     ThemePreviewButton(themeName: viewModel.appearance.themeName)

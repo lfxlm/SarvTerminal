@@ -17,14 +17,14 @@ struct VaultsView: View {
         var id: Self { self }
         var label: String {
             switch self {
-            case .hosts: return "Hosts"
-            case .savedSessions: return "Saved Sessions"
-            case .teams: return "Teams"
-            case .keychain: return "Keychain"
-            case .portForwarding: return "Port Forwarding"
-            case .snippets: return "Snippets"
-            case .knownHosts: return "Known Hosts"
-            case .logs: return "Logs"
+            case .hosts: return loc(.v_hosts)
+            case .savedSessions: return loc(.v_saved_sessions)
+            case .teams: return loc(.v_teams)
+            case .keychain: return loc(.v_keychain)
+            case .portForwarding: return loc(.v_port_forwarding)
+            case .snippets: return loc(.v_snippets)
+            case .knownHosts: return loc(.v_known_hosts)
+            case .logs: return loc(.v_logs)
             }
         }
         var icon: String {

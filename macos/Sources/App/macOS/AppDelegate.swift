@@ -404,7 +404,7 @@ class AppDelegate: NSObject,
 
         // Configure user notifications
         let actions = [
-            UNNotificationAction(identifier: Ghostty.userNotificationActionShow, title: "Show")
+            UNNotificationAction(identifier: Ghostty.userNotificationActionShow, title: loc(.notification_show))
         ]
 
         let center = UNUserNotificationCenter.current()
@@ -639,10 +639,10 @@ class AppDelegate: NSObject,
             // may want to show this as a sheet on the focused window (especially if we're
             // opening a tab). I'm not sure.
             let result = SarvAlert.runModal(
-                title: "Allow Sarv Terminal to execute \"\(filename)\"?",
+                title: loc(.allow_execute, filename),
                 buttons: [
-                    .init("Allow", isDefault: true),
-                    .init("Cancel", isCancel: true),
+                    .init(loc(.allow), isDefault: true),
+                    .init(loc(.cancel), isCancel: true),
                 ])
             guard result.buttonIndex == 0 else { return false }
         }
@@ -1307,10 +1307,10 @@ class AppDelegate: NSObject,
     /// terminal is focused.
     private func setupResetTerminalMenuItem() {
         let action = Selector(("resetTerminal:"))
-        guard let viewMenu = NSApp.mainMenu?.item(withTitle: "View")?.submenu,
+        guard let viewMenu = NSApp.mainMenu?.item(withTitle: "视图")?.submenu,
               !viewMenu.items.contains(where: { $0.action == action })
         else { return }
-        let item = NSMenuItem(title: "Reset Terminal", action: action, keyEquivalent: "")
+        let item = NSMenuItem(title: loc(.reset_terminal), action: action, keyEquivalent: "")
         viewMenu.addItem(.separator())
         viewMenu.addItem(item)
     }
@@ -1442,8 +1442,8 @@ extension AppDelegate {
     }
 
     private func reloadDockMenu() {
-        let newWindow = NSMenuItem(title: "New Window", action: #selector(newWindow), keyEquivalent: "")
-        let newTab = NSMenuItem(title: "New Tab", action: #selector(newTab), keyEquivalent: "")
+        let newWindow = NSMenuItem(title: loc(.new_window_menu), action: #selector(newWindow), keyEquivalent: "")
+        let newTab = NSMenuItem(title: loc(.new_tab_menu), action: #selector(newTab), keyEquivalent: "")
 
         dockMenu.removeAllItems()
         dockMenu.addItem(newWindow)
@@ -1615,13 +1615,9 @@ extension AppDelegate {
             guard let error else { return }
             Task { @MainActor in
                 SarvAlert.runModal(
-                    title: "Failed to Set Default Terminal",
-                    message: """
-                    Sarv Terminal could not be set as the default terminal application.
-
-                    Error: \(error.localizedDescription)
-                    """,
-                    buttons: [.init("OK", isDefault: true)])
+                    title: loc(.failed_set_default_terminal),
+                    message: "Sarv Terminal 无法被设为默认终端应用程序。\n\n错误：\(error.localizedDescription)",
+                    buttons: [.init(loc(.ok), isDefault: true)])
             }
         }
     }
@@ -1696,12 +1692,12 @@ extension AppDelegate {
             // but isn't statically actor-isolated.
             let result = MainActor.assumeIsolated {
                 SarvAlert.runModal(
-                    title: "You have \(controllersNeedConfirmation.count) windows with running processes. Do you want to review these windows before quitting?",
-                    message: "If you don't review your windows, any running processes will be terminated",
+                    title: loc(.quit_confirm_title, controllersNeedConfirmation.count),
+                    message: loc(.quit_confirm_message),
                     buttons: [
-                        .init("Review Windows...", isDefault: true),
-                        .init("Terminate Processes", isDestructive: true),
-                        .init("Cancel", isCancel: true),
+                        .init(loc(.review_windows), isDefault: true),
+                        .init(loc(.terminate_processes), isDestructive: true),
+                        .init(loc(.cancel), isCancel: true),
                     ])
             }
 

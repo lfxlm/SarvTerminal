@@ -23,8 +23,8 @@ struct CursorSectionView: View {
     // MARK: - Style card
 
     private var styleCard: some View {
-        SettingsCard(title: "Style") {
-            row("Cursor style") {
+        SettingsCard(title: loc(.c_style_card)) {
+            row(loc(.c_cursor_style)) {
                 HStack(spacing: 10) {
                     ForEach(CursorStyleOption.allCases) { option in
                         styleChip(option)
@@ -32,7 +32,7 @@ struct CursorSectionView: View {
                 }
             }
             divider
-            row("Blink") {
+            row(loc(.c_blink)) {
                 Picker("", selection: $viewModel.cursor.blink) {
                     ForEach(CursorBlinkOption.allCases) { option in
                         Text(option.label).tag(option)
@@ -79,13 +79,13 @@ struct CursorSectionView: View {
     // MARK: - Color card
 
     private var colorCard: some View {
-        SettingsCard(title: "Text Color") {
-            row("Under-cursor text") {
+        SettingsCard(title: loc(.c_text_color_card)) {
+            row(loc(.c_under_cursor)) {
                 HStack(spacing: 12) {
-                    Toggle("Override", isOn: $viewModel.cursor.useTextColor)
+                    Toggle(loc(.a_override), isOn: $viewModel.cursor.useTextColor)
                         .toggleStyle(.switch)
                         .labelsHidden()
-                    Text(viewModel.cursor.useTextColor ? "Custom" : "Default")
+                    Text(viewModel.cursor.useTextColor ? loc(.a_custom) : loc(.a_default))
                         .font(.callout)
                         .foregroundStyle(.secondaryText)
                         .frame(width: 60, alignment: .leading)
@@ -100,8 +100,8 @@ struct CursorSectionView: View {
     // MARK: - Opacity card
 
     private var opacityCard: some View {
-        SettingsCard(title: "Opacity") {
-            row("Cursor opacity") {
+        SettingsCard(title: loc(.c_opacity_card)) {
+            row(loc(.c_cursor_opacity)) {
                 HStack(spacing: 12) {
                     Slider(value: $viewModel.cursor.opacity, in: 0...1)
                         .frame(maxWidth: 320)
@@ -118,13 +118,13 @@ struct CursorSectionView: View {
     // MARK: - Behavior card
 
     private var behaviorCard: some View {
-        SettingsCard(title: "Behavior") {
-            row("Click to move") {
+        SettingsCard(title: loc(.c_behavior_card)) {
+            row(loc(.c_click_move)) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Toggle("Move cursor by clicking in the prompt line",
+                    Toggle(loc(.c_click_move_desc),
                            isOn: $viewModel.cursor.clickToMove)
                         .toggleStyle(.checkbox)
-                    Text("Requires shell integration. Sends arrow keys to move from the current cursor position to where you clicked.")
+                    Text(loc(.c_click_move_detail))
                         .font(.caption)
                         .foregroundStyle(.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)

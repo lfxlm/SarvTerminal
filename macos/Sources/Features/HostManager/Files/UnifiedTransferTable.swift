@@ -9,6 +9,7 @@ import SwiftUI
 struct UnifiedTransferTable: View {
     @ObservedObject private var manager = SFTPTransferManager.shared
     @State private var expanded = true
+    @ObservedObject private var lang = AppLanguageSettings.shared
 
     /// Fixed height for the entire expanded area (title bar + rows).
     private let tableHeight: CGFloat = 200
@@ -25,27 +26,27 @@ struct UnifiedTransferTable: View {
                         .foregroundStyle(.secondaryText)
                 }
                 .buttonStyle(.plain)
-                .help(expanded ? "Collapse" : "Expand")
+                .help(expanded ? loc(.collapsed) : loc(.expanded))
 
-                Text("Transfers").font(.system(size: 11, weight: .semibold))
+                Text(loc(.transfers)).font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.secondaryText)
                     .frame(width: 68, alignment: .leading)
 
                 HStack(spacing: 10) {
-                    Text("Source").font(.system(size: 11, weight: .semibold))
+                    Text(loc(.source_column)).font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(.secondaryText)
                         .frame(width: 95, alignment: .leading)
                     Color.clear.frame(width: 10)
-                    Text("Destination").font(.system(size: 11, weight: .semibold))
+                    Text(loc(.destination_column)).font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(.secondaryText)
                         .frame(width: 95, alignment: .leading)
-                    Text("File").font(.system(size: 11, weight: .semibold))
+                    Text(loc(.file_column)).font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(.secondaryText)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    Text("Size").font(.system(size: 11, weight: .semibold))
+                    Text(loc(.size_column_small)).font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(.secondaryText)
                         .frame(width: 70, alignment: .trailing)
-                    Text("Progress").font(.system(size: 11, weight: .semibold))
+                    Text(loc(.progress_column)).font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(.secondaryText)
                         .frame(width: 110, alignment: .leading)
                 }
@@ -53,7 +54,7 @@ struct UnifiedTransferTable: View {
                 Spacer(minLength: 0)
 
                 if !manager.transfers.isEmpty {
-                    Button("Clear completed") {
+                    Button(loc(.clear_completed)) {
                         manager.transfers.removeAll()
                     }
                     .buttonStyle(.plain)
@@ -168,11 +169,11 @@ private struct TransferRecordRow: View {
                             .frame(width: 50)
                     }
                 case .completed:
-                    Text("Done").foregroundStyle(.green)
+                    Text(loc(.done)).foregroundStyle(.green)
                 case .failed:
-                    Text("Failed").foregroundStyle(.red)
+                    Text(loc(.failed)).foregroundStyle(.red)
                 case .cancelled:
-                    Text("Cancelled").foregroundStyle(.secondaryText)
+                    Text(loc(.cancelled)).foregroundStyle(.secondaryText)
                 }
 
                 if record.status == .inProgress, record.bytesPerSecond > 0 {
@@ -188,7 +189,7 @@ private struct TransferRecordRow: View {
             // Action
             switch record.status {
             case .inProgress:
-                Button("Cancel", action: onCancel)
+                Button(loc(.cancel), action: onCancel)
                     .buttonStyle(.plain)
                     .foregroundStyle(.red)
                     .font(.system(size: 11))

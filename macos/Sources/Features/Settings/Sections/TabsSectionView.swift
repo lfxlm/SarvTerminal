@@ -11,8 +11,8 @@ struct TabsSectionView: View {
     }
 
     private var titlebarCard: some View {
-        SettingsCard(title: "macOS Titlebar") {
-            row("Style") {
+        SettingsCard(title: loc(.t_titlebar)) {
+            row(loc(.t_style)) {
                 Picker("", selection: $viewModel.tabs.titlebarStyle) {
                     ForEach(MacosTitlebarStyleOption.allCases) { opt in
                         Text(opt.label).tag(opt)
@@ -21,7 +21,7 @@ struct TabsSectionView: View {
                 .labelsHidden().pickerStyle(.menu).frame(maxWidth: 320, alignment: .leading)
             }
             divider
-            row("Proxy icon") {
+            row(loc(.t_proxy_icon)) {
                 Picker("", selection: $viewModel.tabs.titlebarProxyIcon) {
                     ForEach(MacosTitlebarProxyIconOption.allCases) { opt in
                         Text(opt.label).tag(opt)
@@ -33,8 +33,8 @@ struct TabsSectionView: View {
     }
 
     private var newTabCard: some View {
-        SettingsCard(title: "New Tab") {
-            row("Position") {
+        SettingsCard(title: loc(.t_new_tab_card)) {
+            row(loc(.t_position)) {
                 Picker("", selection: $viewModel.tabs.newTabPosition) {
                     ForEach(NewTabPositionOption.allCases) { opt in
                         Text(opt.label).tag(opt)

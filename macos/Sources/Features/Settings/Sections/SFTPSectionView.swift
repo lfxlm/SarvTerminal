@@ -10,45 +10,46 @@ import SwiftUI
 struct SFTPSectionView: View {
     @ObservedObject var viewModel: SettingsViewModel
     @ObservedObject private var settings = SFTPSettings.shared
+    @ObservedObject private var lang = AppLanguageSettings.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            SettingsCard(title: "Editing") {
-                row("Auto-save") {
+            SettingsCard(title: loc(.editing)) {
+                row(loc(.auto_save)) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Toggle("Save edits automatically", isOn: $settings.autoSave)
+                        Toggle(loc(.save_edits_automatically), isOn: $settings.autoSave)
                             .toggleStyle(.checkbox)
-                        Text("A moment after you stop typing. When off, save manually with the Save button or ⌘S.")
+                        Text(loc(.save_edits_description))
                             .font(.caption).foregroundStyle(.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 divider
-                row("Indentation") {
+                row(loc(.indentation)) {
                     VStack(alignment: .leading, spacing: 4) {
                         Picker("", selection: $settings.indentWidth) {
-                            Text("2 spaces").tag(2)
-                            Text("4 spaces").tag(4)
+                            Text(loc(.spaces_2)).tag(2)
+                            Text(loc(.spaces_4)).tag(4)
                         }
                         .pickerStyle(.segmented).labelsHidden().frame(width: 200)
-                        Text("Spaces inserted by Tab. New files open with this; the viewer's dropdown can override it per file.")
+                        Text(loc(.indentation_description))
                             .font(.caption).foregroundStyle(.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
             }
 
-            SettingsCard(title: "Browser") {
-                row("Deleting") {
-                    Toggle("Confirm before deleting", isOn: $settings.confirmDelete)
+            SettingsCard(title: loc(.browser)) {
+                row(loc(.deleting)) {
+                    Toggle(loc(.confirm_delete), isOn: $settings.confirmDelete)
                         .toggleStyle(.checkbox)
                 }
                 divider
-                row("Hidden files") {
+                row(loc(.hidden_files)) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Toggle("Show hidden files", isOn: $settings.showHidden)
+                        Toggle(loc(.show_hidden_files), isOn: $settings.showHidden)
                             .toggleStyle(.checkbox)
-                        Text("Show dot-files (e.g. .gitconfig) in the file list.")
+                        Text(loc(.show_hidden_files_description))
                             .font(.caption).foregroundStyle(.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                     }

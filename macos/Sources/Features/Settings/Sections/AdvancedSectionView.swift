@@ -19,9 +19,9 @@ struct AdvancedSectionView: View {
     // MARK: - Config file card
 
     private var fileCard: some View {
-        SettingsCard(title: "Configuration File") {
+        SettingsCard(title: loc(.adv_config_file)) {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Path")
+                Text(loc(.adv_path))
                     .font(.caption)
                     .foregroundStyle(.secondaryText)
                 HStack {
@@ -37,7 +37,7 @@ struct AdvancedSectionView: View {
                         Image(systemName: "doc.on.doc")
                     }
                     .controlSize(.small)
-                    .help("Copy path to clipboard")
+                    .help(loc(.adv_copy_path))
                 }
             }
             .padding(.horizontal, 16)
@@ -48,32 +48,32 @@ struct AdvancedSectionView: View {
     // MARK: - Actions card
 
     private var actionsCard: some View {
-        SettingsCard(title: "Actions") {
+        SettingsCard(title: loc(.adv_actions)) {
             VStack(alignment: .leading, spacing: 0) {
                 actionRow(
-                    title: "Edit config file",
-                    detail: "Opens the config in the inbuilt editor (syntax highlighting, ⌘S to save).",
+                    title: loc(.adv_edit_config),
+                    detail: loc(.adv_edit_config_detail),
                     systemImage: "doc.text",
                     action: editConfig
                 )
                 divider
                 actionRow(
-                    title: "Open in external editor",
-                    detail: "Opens the config in your default text editor (e.g., $EDITOR or TextEdit).",
+                    title: loc(.adv_open_external),
+                    detail: loc(.adv_open_external_detail),
                     systemImage: "arrow.up.forward.app",
                     action: openInEditor
                 )
                 divider
                 actionRow(
-                    title: "Reveal in Finder",
-                    detail: "Highlights the config file in a Finder window.",
+                    title: loc(.adv_reveal_finder),
+                    detail: loc(.adv_reveal_finder_detail),
                     systemImage: "folder",
                     action: revealInFinder
                 )
                 divider
                 actionRow(
-                    title: "Reload configuration",
-                    detail: "Re-reads the file and applies changes without restarting.",
+                    title: loc(.adv_reload_config),
+                    detail: loc(.adv_reload_config_detail),
                     systemImage: "arrow.clockwise",
                     action: reloadConfig
                 )
@@ -111,13 +111,13 @@ struct AdvancedSectionView: View {
     // MARK: - Errors card
 
     private var errorsCard: some View {
-        SettingsCard(title: "Diagnostics") {
+        SettingsCard(title: loc(.adv_diagnostics)) {
             let errors = configErrors
             if errors.isEmpty {
                 HStack(spacing: 10) {
                     Image(systemName: "checkmark.seal.fill")
                         .foregroundStyle(.green)
-                    Text("No configuration errors")
+                    Text(loc(.adv_no_errors))
                         .foregroundStyle(.secondaryText)
                 }
                 .padding(.horizontal, 16)
@@ -127,7 +127,7 @@ struct AdvancedSectionView: View {
                     HStack(spacing: 10) {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .foregroundStyle(.orange)
-                        Text("\(errors.count) error\(errors.count == 1 ? "" : "s")")
+                        Text("\(errors.count) \(loc(.adv_errors, errors.count))")
                             .fontWeight(.semibold)
                     }
                     ForEach(errors.indices, id: \.self) { i in

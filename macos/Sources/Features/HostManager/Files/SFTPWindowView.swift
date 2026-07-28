@@ -16,6 +16,7 @@ struct SFTPWindowView: View {
     @State private var permTarget: (side: Side, item: FileItem)?
     @State private var conflict: ConflictRequest?
     @State private var pendingDeletion: PendingDeletion?
+    @State private var imagePreview: ImagePreviewData?
 
     enum Side: String, Identifiable { case left, right; var id: String { rawValue } }
 
@@ -23,6 +24,12 @@ struct SFTPWindowView: View {
         let id = UUID()
         let side: Side
         let items: [FileItem]
+    }
+
+    struct ImagePreviewData: Identifiable {
+        let id = UUID()
+        let url: URL
+        let fileName: String
     }
 
     struct ConflictRequest: Identifiable {
@@ -153,6 +160,13 @@ struct SFTPWindowView: View {
                 ConflictDialog(name: c.item.name) { resolve(c, $0) }
             }
         }
+        .overlay {
+            if let p = imagePreview {
+                ImagePreviewView(url: p.url, fileName: p.fileName) {
+                    imagePreview = nil
+                }
+            }
+        }
     }
 
     // MARK: - Pane tab bar
@@ -257,9 +271,15 @@ struct SFTPWindowView: View {
         case .chooseHost:
             hostPickerSide = side
         case .open(let item):
-            if item.isDirectory { m.open(item) }
-            else { FileEditorWindowController.shared.open(
-                model: FileViewerModel(item: item, backend: m.backend)) }
+            if item.isDirectory {
+                m.open(item)
+            } else if isImageFile(item.name) {
+                openImagePreview(item, model: m)
+            } else {
+                FileEditorWindowController.shared.open(
+                    model: FileViewerModel(item: item, backend: m.backend),
+                    onDismiss: { SFTPWindowManager.shared.show() })
+            }
         case .goUp: m.goUp()
         case .navigate(let p): Task { await m.load(p) }
         case .refresh: Task { await m.reload() }
@@ -268,6 +288,27 @@ struct SFTPWindowView: View {
         case .delete(let items): deleteItems(items, on: side)
         case .editPermissions(let item): permTarget = (side, item)
         case .copyToTarget(let items): copyItems(items, from: side)
+        }
+    }
+
+    /// Common image file extensions recognised by the system.
+    private func isImageFile(_ name: String) -> Bool {
+        let ext = (name as NSString).pathExtension.lowercased()
+        return ["jpg", "jpeg", "png", "gif", "bmp", "tiff", "tif", "heic", "heif", "webp", "ico", "icns"].contains(ext)
+    }
+
+    /// Download a remote image to a temp file and show the preview overlay.
+    private func openImagePreview(_ item: FileItem, model: SFTPBrowserModel) {
+        Task {
+            do {
+                let url = try await model.backend.localCopy(of: item)
+                imagePreview = ImagePreviewData(url: url, fileName: item.name)
+            } catch {
+                // Fall back to the text viewer (will show its own error).
+                FileEditorWindowController.shared.open(
+                    model: FileViewerModel(item: item, backend: model.backend),
+                    onDismiss: { SFTPWindowManager.shared.show() })
+            }
         }
     }
 

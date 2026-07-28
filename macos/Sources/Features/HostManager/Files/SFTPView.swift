@@ -193,7 +193,7 @@ struct SFTPView: View {
         case .chooseHost: hostPickerSide = side
         case .open(let item):
             if item.isDirectory { m.open(item) }
-            else { FileEditorWindowController.shared.open(model: FileViewerModel(item: item, backend: m.backend)) }
+            else { FileEditorWindowController.shared.open(model: FileViewerModel(item: item, backend: m.backend), onDismiss: { SFTPWindowManager.shared.show() }) }
         case .goUp: m.goUp()
         case .navigate(let p): Task { await m.load(p) }
         case .refresh: Task { await m.reload() }

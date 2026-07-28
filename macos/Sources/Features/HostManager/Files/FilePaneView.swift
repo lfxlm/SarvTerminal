@@ -11,6 +11,9 @@ struct FilePaneView: View {
     @State private var pathEditing = false
     @FocusState private var pathFocused: Bool
 
+    @StateObject private var bookmarkStore = SFTPBookmarkStore.shared
+    @State private var showBookmarks = false
+
     // Column widths shared by the header and rows so they line up.
     private let dateW: CGFloat = 150
     private let sizeW: CGFloat = 78
@@ -75,6 +78,18 @@ struct FilePaneView: View {
             .hoverTip("Filter files in this folder")
 
             if model.isLoading { ProgressView().controlSize(.small) }
+
+            // Directory bookmarks (per‑server).
+            Button { showBookmarks.toggle() } label: {
+                Image(systemName: "bookmark")
+                    .foregroundStyle(hasBookmarkForCurrentDir ? Color.accentColor : Color.secondary)
+            }
+            .buttonStyle(.plain)
+            .hoverTip("Bookmarks")
+            .popover(isPresented: $showBookmarks, arrowEdge: .bottom) {
+                bookmarkPopover
+            }
+
             Button { onAction(.newFolder) } label: { Image(systemName: "folder.badge.plus") }
                 .buttonStyle(.plain).hoverTip("New Folder")
             Button { onAction(.refresh) } label: { Image(systemName: "arrow.clockwise") }
@@ -251,6 +266,94 @@ struct FilePaneView: View {
         return Text(String(name[..<r.lowerBound]))
             + Text(String(name[r])).bold().foregroundColor(.orange)
             + Text(String(name[r.upperBound...]))
+    }
+
+    /// Whether the current directory is already in this location's bookmarks.
+    private var hasBookmarkForCurrentDir: Bool {
+        bookmarkStore.isBookmarked(path: model.path, for: model.location.locationID)
+    }
+
+    // MARK: Bookmarks popover
+
+    @ViewBuilder
+    private var bookmarkPopover: some View {
+        let locID = model.location.locationID
+        let list = bookmarkStore.bookmarks(for: locID)
+
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("Bookmarks")
+                    .font(.system(size: 12, weight: .semibold))
+                Spacer()
+                if !hasBookmarkForCurrentDir {
+                    Button { addCurrentDir(locID) } label: {
+                        Image(systemName: "plus")
+                    }
+                    .buttonStyle(.plain)
+                    .help("Add current directory")
+                }
+            }
+            .padding(.horizontal, 12).padding(.vertical, 8)
+
+            if list.isEmpty {
+                Text("No bookmarks yet")
+                    .font(.caption)
+                    .foregroundStyle(.secondaryText)
+                    .padding(.horizontal, 12).padding(.vertical, 10)
+            } else {
+                Divider()
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(list) { bookmark in
+                            bookmarkRow(bookmark, locID: locID)
+                            Divider().opacity(0.3)
+                        }
+                    }
+                }
+                .frame(maxHeight: 220)
+            }
+        }
+        .frame(width: 240)
+        .padding(.bottom, 6)
+    }
+
+    private func addCurrentDir(_ locID: String) {
+        let name = (model.path as NSString).lastPathComponent
+        let bm = SFTPBookmark(name: name.isEmpty ? "/" : name, path: model.path)
+        bookmarkStore.add(bm, for: locID)
+    }
+
+    private func bookmarkRow(_ bookmark: SFTPBookmark, locID: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "folder.fill")
+                .font(.system(size: 10))
+                .foregroundStyle(Color.accentColor)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(bookmark.name)
+                    .font(.system(size: 11, weight: .medium))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Text(bookmark.path)
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundStyle(.tertiaryText)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            Spacer()
+            Button { bookmarkStore.remove(bookmark, for: locID) } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(.tertiaryText)
+            }
+            .buttonStyle(.plain)
+            .help("Remove bookmark")
+        }
+        .padding(.horizontal, 12).padding(.vertical, 6)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            showBookmarks = false
+            onAction(.navigate(bookmark.path))
+        }
     }
 
     private func row(_ item: FileItem) -> some View {

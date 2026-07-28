@@ -40,4 +40,12 @@ enum FileLocation: Equatable {
     }
 
     var isLocal: Bool { if case .local = self { return true }; return false }
+
+    /// Stable identifier used as the key for per‑location bookmarks.
+    var locationID: String {
+        switch self {
+        case .local: return "__local__"
+        case .host(let h): return h.id.uuidString
+        }
+    }
 }

@@ -234,7 +234,7 @@ class HostManagerController: NSWindowController, NSWindowDelegate {
     /// Present the inbuilt file viewer/editor as a full-window overlay INSIDE
     /// this window (not a separate window), so it moves/resizes with the window
     /// and can never float over other apps or detach in Mission Control.
-    func presentFileEditor(model: FileViewerModel) {
+    func presentFileEditor(model: FileViewerModel, onDismiss: (() -> Void)? = nil) {
         dismissFileEditor()
         // The overlay covers the terminal surface, so it never receives a
         // mouse-exit to clear a hovered link. Without this, the "⌘ click to
@@ -243,7 +243,10 @@ class HostManagerController: NSWindowController, NSWindowDelegate {
         VaultsTabsModel.shared.activeTerminal?.focusedSurface?.hoverUrl = nil
         guard let container = window?.contentView else { return }
         let host = NSHostingView(rootView:
-            FileViewerView(model: model, onClose: { [weak self] in self?.dismissFileEditor() })
+            FileViewerView(model: model, onClose: { [weak self] in
+                self?.dismissFileEditor()
+                onDismiss?()
+            })
         )
         // Autoresizing (not Auto Layout) — see the note on the container above.
         host.frame = container.bounds

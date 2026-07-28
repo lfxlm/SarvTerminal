@@ -25,7 +25,10 @@ final class FileEditorWindowController {
 
     /// Open an already-configured viewer model (e.g. a remote file from the SFTP
     /// browser) in the full-window overlay.
-    func open(model: FileViewerModel) {
-        HostManagerController.shared.presentFileEditor(model: model)
+    ///
+    /// - Parameter onDismiss: Called after the editor is dismissed. The SFTP
+    ///   browser uses this to re‑activate its window.
+    func open(model: FileViewerModel, onDismiss: (() -> Void)? = nil) {
+        HostManagerController.shared.presentFileEditor(model: model, onDismiss: onDismiss)
     }
 }

@@ -201,14 +201,25 @@ struct VaultsTabStrip: View {
     }
 
     private var sftpPill: some View {
-        sectionPill(
-            section: .sftp,
-            icon: "folder",
-            label: "SFTP",
-            trailingChevron: false,
-            comingSoon: false,
-            help: "SFTP — local ⇄ remote file transfer"
-        )
+        Button {
+            SFTPWindowManager.shared.show()
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "folder")
+                    .foregroundStyle(.secondary)
+                Text("SFTP").lineLimit(1).fixedSize()
+            }
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color.secondary.opacity(0.08))
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("SFTP — local ⇄ remote file transfer (standalone window)")
     }
 
     private func sectionPill(

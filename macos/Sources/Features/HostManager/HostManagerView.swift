@@ -11,7 +11,7 @@ struct HostManagerView: View {
         Group {
             switch selection.section {
             case .vaults: VaultsView()
-            case .sftp:   SFTPView()
+            case .sftp:   VaultsView()  // SFTP is now a standalone window
             }
         }
         .frame(minWidth: 900, minHeight: 560)

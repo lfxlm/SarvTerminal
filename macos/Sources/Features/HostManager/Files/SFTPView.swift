@@ -199,11 +199,11 @@ struct SFTPView: View {
         case .refresh: Task { await m.reload() }
         case .newFolder: newFolderName = ""; newFolderSide = side
         case .rename(let item): renameText = item.name; renameTarget = (side, item)
-        case .delete(let item):
-            if SFTPSettings.shared.confirmDelete { pendingDelete = (side, item) }
-            else { Task { await m.delete(item) } }
+        case .delete(let items):
+            if SFTPSettings.shared.confirmDelete { pendingDelete = (side, items.first!) }
+            else { Task { for item in items { try? await m.delete(item) } } }
         case .editPermissions(let item): permTarget = (side, item)
-        case .copyToTarget(let item): startCopy(item, from: side)
+        case .copyToTarget(let items): startCopy(items.first!, from: side)
         }
     }
 
@@ -454,7 +454,7 @@ enum FilePaneAction {
     case refresh
     case newFolder
     case rename(FileItem)
-    case delete(FileItem)
+    case delete([FileItem])
     case editPermissions(FileItem)
-    case copyToTarget(FileItem)
+    case copyToTarget([FileItem])
 }

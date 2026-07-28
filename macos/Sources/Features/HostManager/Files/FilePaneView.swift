@@ -254,7 +254,7 @@ struct FilePaneView: View {
     }
 
     private func row(_ item: FileItem) -> some View {
-        let selected = model.selectedID == item.id
+        let selected = model.isSelected(item.id)
         return HStack(spacing: 10) {
             HStack(spacing: 10) {
                 Image(systemName: item.icon)
@@ -280,9 +280,18 @@ struct FilePaneView: View {
         .padding(.horizontal, 12).padding(.vertical, 6)
         .background(selected ? Color.accentColor.opacity(0.18) : .clear)
         .contentShape(Rectangle())
-        .onTapGesture { model.selectedID = item.id }
+        .onTapGesture {
+            let flags = NSEvent.modifierFlags
+            if flags.contains(.command) {
+                model.toggleSelection(item.id)
+            } else if flags.contains(.shift) {
+                model.selectRange(to: item.id)
+            } else {
+                model.selectSingle(item.id)
+            }
+        }
         .simultaneousGesture(TapGesture(count: 2).onEnded {
-            model.selectedID = item.id
+            model.selectSingle(item.id)
             onAction(.open(item))
         })
         .contextMenu {
@@ -290,9 +299,18 @@ struct FilePaneView: View {
                 Button("View") { onAction(.open(item)) }
                 Divider()
             }
-            Button("Copy to target directory") { onAction(.copyToTarget(item)) }
+            if model.isSelected(item.id), model.selectedIDs.count > 1 {
+                Button("Copy \(model.selectedIDs.count) items to target directory") {
+                    onAction(.copyToTarget(Array(model.selectedItems)))
+                }
+                Button("Delete \(model.selectedIDs.count) items", role: .destructive) {
+                    onAction(.delete(Array(model.selectedItems)))
+                }
+            } else {
+                Button("Copy to target directory") { onAction(.copyToTarget([item])) }
+                Button("Delete", role: .destructive) { onAction(.delete([item])) }
+            }
             Button("Rename") { onAction(.rename(item)) }
-            Button("Delete", role: .destructive) { onAction(.delete(item)) }
             Divider()
             Button("Refresh") { onAction(.refresh) }
             Button("New Folder") { onAction(.newFolder) }

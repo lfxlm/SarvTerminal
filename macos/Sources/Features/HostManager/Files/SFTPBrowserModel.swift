@@ -8,9 +8,43 @@ final class SFTPBrowserModel: ObservableObject {
     @Published private(set) var items: [FileItem] = []
     @Published private(set) var isLoading = false
     @Published var error: String?
-    @Published var selectedID: String?
+    @Published var selectedIDs: Set<String> = []
 
-    private(set) var backend: FileBackend = LocalFileBackend()
+    /// Items currently selected, ordered by display order.
+    var selectedItems: [FileItem] {
+        displayItems.filter { selectedIDs.contains($0.id) }
+    }
+
+    /// True when the ID is in the selection set.
+    func isSelected(_ id: String) -> Bool { selectedIDs.contains(id) }
+
+    /// Replace selection with a single ID.
+    func selectSingle(_ id: String) { selectedIDs = [id]; lastClickedID = id }
+
+    /// Toggle (add/remove) one ID from the selection.
+    func toggleSelection(_ id: String) {
+        if selectedIDs.contains(id) {
+            if selectedIDs.count > 1 { selectedIDs.remove(id) }
+        } else {
+            selectedIDs.insert(id)
+        }
+        lastClickedID = id
+    }
+
+    /// Extend selection from the last clicked item to the given item.
+    func selectRange(to id: String) {
+        guard let anchor = lastClickedID,
+              let anchorIdx = displayItems.firstIndex(where: { $0.id == anchor }),
+              let curIdx = displayItems.firstIndex(where: { $0.id == id })
+        else { selectSingle(id); return }
+        let lower = min(anchorIdx, curIdx)
+        let upper = max(anchorIdx, curIdx)
+        selectedIDs = Set(displayItems[lower...upper].map(\.id))
+        lastClickedID = id
+    }
+
+    /// Last clicked ID (anchor for Shift+click range).
+    private var lastClickedID: String? = nil
 
     /// Visited-directory history for back/forward navigation.
     @Published private(set) var history: [String] = []
@@ -24,7 +58,12 @@ final class SFTPBrowserModel: ObservableObject {
     /// In-pane filter text.
     @Published var search: String = ""
 
-    var selectedItem: FileItem? { items.first { $0.id == selectedID } }
+    var selectedItem: FileItem? {
+        guard selectedIDs.count == 1, let id = selectedIDs.first else { return nil }
+        return items.first { $0.id == id }
+    }
+
+    private(set) var backend: FileBackend = LocalFileBackend()
 
     /// "folder" / "alias" / file extension / "file".
     func kind(_ item: FileItem) -> String {
@@ -66,7 +105,7 @@ final class SFTPBrowserModel: ObservableObject {
         case .local: backend = LocalFileBackend()
         case .host(let h): backend = RemoteFileBackend(host: h)
         }
-        selectedID = nil
+        selectedIDs.removeAll(keepingCapacity: false)
         history = []
         historyIndex = -1
         Task { await loadHome() }
@@ -88,7 +127,7 @@ final class SFTPBrowserModel: ObservableObject {
             let listed = try await backend.list(newPath)
             self.path = newPath
             self.items = listed
-            self.selectedID = nil
+            self.selectedIDs.removeAll(keepingCapacity: false)
             if record {
                 // Drop any forward history, then push this directory.
                 if historyIndex < history.count - 1 {

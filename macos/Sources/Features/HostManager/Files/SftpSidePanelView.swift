@@ -84,6 +84,23 @@ struct SftpSidePanelView: View {
                 )
                 uploadProgressList
             }
+            .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
+                handleDrop(providers); return true
+            }
+            .overlay {
+                if isDropTargeted {
+                    VStack(spacing: 8) {
+                        Image(systemName: "arrow.down.circle.fill")
+                            .font(.system(size: 36))
+                        Text("Drop files to upload")
+                            .font(.headline)
+                    }
+                    .foregroundStyle(Color.accentColor)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color.accentColor.opacity(0.1))
+                    .allowsHitTesting(false)
+                }
+            }
         }
         .onAppear { remote.connect(to: .host(host)) }
         // ── Dialogs ───────────────────────────────────────────────
@@ -150,6 +167,25 @@ struct SftpSidePanelView: View {
             if let p = imagePreview {
                 ImagePreviewView(url: p.url, fileName: p.fileName) { imagePreview = nil }
             }
+        }
+    }
+
+    // -- Drag-and-drop state --
+    @State private var isDropTargeted = false
+
+    /// Load file URLs from dropped providers and upload them.
+    private func handleDrop(_ providers: [NSItemProvider]) {
+        var collected: [URL] = []
+        let group = DispatchGroup()
+        for provider in providers {
+            group.enter()
+            _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                if let url, url.isFileURL { collected.append(url) }
+                group.leave()
+            }
+        }
+        group.notify(queue: .main) {
+            if !collected.isEmpty { uploadURLs(collected) }
         }
     }
 
@@ -336,41 +372,47 @@ struct SftpSidePanelView: View {
         panel.allowsMultipleSelection = true
         panel.begin { response in
             guard response == .OK else { return }
-            let fm = FileManager.default
-            let local = LocalFileBackend()
-            let destDir = remote.path
+            uploadURLs(panel.urls)
+        }
+    }
 
-            for url in panel.urls {
-                let attrs = try? fm.attributesOfItem(atPath: url.path)
-                let fileSize = (attrs?[.size] as? NSNumber)?.int64Value ?? 0
-                let item = FileItem(
-                    name: url.lastPathComponent, path: url.path,
-                    isDirectory: false, isSymlink: false,
-                    size: fileSize, modified: nil, permissions: nil
-                )
-                let destPath = remote.backend.join(destDir, item.name)
-                let progress = UploadProgress(
-                    fileName: url.lastPathComponent, fileSize: fileSize,
-                    direction: .upload, transferred: 0, bytesPerSecond: 0,
-                    status: .uploading
-                )
-                uploads.append(progress)
-                let pid = progress.id
-                let poller = startPoller(for: pid, destBackend: remote.backend, destPath: destPath, totalSize: fileSize)
+    /// Core upload logic shared by the file-picker button and drag-and-drop.
+    private func uploadURLs(_ urls: [URL]) {
+        let fm = FileManager.default
+        let local = LocalFileBackend()
+        let destDir = remote.path
 
-                Task {
-                    defer { poller.cancel() }
-                    do {
-                        try await FileTransfer.copy(
-                            item: item, from: local, to: remote.backend,
-                            destDir: destDir, resolution: .replace
-                        )
-                        snapToFullSize(pid)
-                        setStatus(pid, .completed)
-                        await remote.reload()
-                    } catch {
-                        setStatus(pid, .failed(error.localizedDescription))
-                    }
+        for url in urls {
+            let attrs = try? fm.attributesOfItem(atPath: url.path)
+            let fileSize = (attrs?[.size] as? NSNumber)?.int64Value ?? 0
+            let isDir = (attrs?[.type] as? FileAttributeType) == .typeDirectory
+            let item = FileItem(
+                name: url.lastPathComponent, path: url.path,
+                isDirectory: isDir, isSymlink: false,
+                size: fileSize, modified: nil, permissions: nil
+            )
+            let destPath = remote.backend.join(destDir, item.name)
+            let progress = UploadProgress(
+                fileName: url.lastPathComponent, fileSize: fileSize,
+                direction: .upload, transferred: 0, bytesPerSecond: 0,
+                status: .uploading
+            )
+            uploads.append(progress)
+            let pid = progress.id
+            let poller = startPoller(for: pid, destBackend: remote.backend, destPath: destPath, totalSize: fileSize)
+
+            Task {
+                defer { poller.cancel() }
+                do {
+                    try await FileTransfer.copy(
+                        item: item, from: local, to: remote.backend,
+                        destDir: destDir, resolution: .replace
+                    )
+                    snapToFullSize(pid)
+                    setStatus(pid, .completed)
+                    await remote.reload()
+                } catch {
+                    setStatus(pid, .failed(error.localizedDescription))
                 }
             }
         }

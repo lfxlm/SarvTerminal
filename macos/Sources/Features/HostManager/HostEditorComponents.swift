@@ -819,9 +819,12 @@ extension View {
 
 // MARK: - Proxy jump picker row
 
-/// A picker row that lets the user select a saved host as a jump/bastion host,
-/// or type a custom proxy jump string. Shows "None" / saved hosts / "Custom…"
-/// in a popover list, and reveals a text field when "Custom…" is chosen.
+/// A picker row that lets the user build a multi-hop jump/bastion chain, or
+/// type a custom proxy jump string. SSH's `-J` flag accepts a comma-separated
+/// list of jump targets (`hop1,hop2,…`), so the proxyJump string stores them
+/// that way. Saved hosts can be appended to the chain one by one; a "Custom…"
+/// option reveals a free-text field for manual entry (including commas for
+/// multi-hop).
 struct EditorProxyJumpRow: View {
     let icon: String
     let title: String
@@ -845,22 +848,24 @@ struct EditorProxyJumpRow: View {
         availableHosts.filter { $0.id != currentHostID }
     }
 
-    /// The label for the currently selected option shown in the picker capsule.
-    private var currentLabel: String {
-        if let hostID = proxyJumpHostID,
-           let host = availableHosts.first(where: { $0.id == hostID })
-        {
-            return host.displayLabel
-        }
-        if !proxyJump.isEmpty { return "Custom…" }
-        return "None"
+    /// The individual jump targets in the current chain (comma-separated).
+    private var hops: [String] {
+        VaultsTabsModel.parseProxyJump(proxyJump)
     }
 
-    /// Determine which saved host ID (if any) matches the current proxyJump string.
-    private var proxyJumpHostID: UUID? {
-        availableHosts.first { host in
-            host.jumpString == proxyJump
-        }?.id
+    /// The label for the currently selected option shown in the picker capsule.
+    private var currentLabel: String {
+        let count = hops.count
+        if count == 0 { return "None" }
+        if count == 1 {
+            // Single hop: show its label if it's a saved host, else "Custom…".
+            let hop = hops[0]
+            if let host = availableHosts.first(where: { $0.jumpString == hop }) {
+                return host.displayLabel
+            }
+            return "Custom…"
+        }
+        return "\(count) hops"
     }
 
     var body: some View {
@@ -895,10 +900,45 @@ struct EditorProxyJumpRow: View {
             .editorFocus(focus, field)
             .modifier(ActivateOnKeyPress { isPresented = true })
 
+            // The current jump chain — each hop shown as a removable chip.
+            if hops.count > 1 || (hops.count == 1 && showCustomField == false) {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(Array(hops.enumerated()), id: \.offset) { idx, hop in
+                        HStack(spacing: 6) {
+                            if idx > 0 {
+                                Image(systemName: "arrow.down")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(.tertiaryText)
+                            }
+                            Text(hopLabel(for: hop))
+                                .font(.caption)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Spacer()
+                            Button {
+                                removeHop(at: idx)
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(.secondaryText)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Remove this hop")
+                        }
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(
+                            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                .fill(Color.secondary.opacity(0.08))
+                        )
+                    }
+                }
+                .padding(.leading, 28)
+            }
+
             // Custom text field when "Custom…" is chosen or proxyJump has a non-matching value.
             if showCustomField {
                 HStack(spacing: 6) {
-                    TextField("user@bastion", text: $proxyJump)
+                    TextField("user@bastion,hop2,hop3", text: $proxyJump)
                         .textFieldStyle(.plain)
                         .font(.system(.body, design: .monospaced))
                         .focused($customFocused)
@@ -929,7 +969,7 @@ struct EditorProxyJumpRow: View {
         }
         .popover(isPresented: $isPresented, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 2) {
-                // None — clears the jump host.
+                // None — clears the entire jump chain.
                 Button {
                     proxyJump = ""
                     showCustomField = false
@@ -953,8 +993,7 @@ struct EditorProxyJumpRow: View {
                     Divider()
                     ForEach(pickerHosts) { host in
                         Button {
-                            let jump = host.jumpString
-                            proxyJump = jump
+                            appendHop(host.jumpString)
                             showCustomField = false
                             isPresented = false
                         } label: {
@@ -967,10 +1006,7 @@ struct EditorProxyJumpRow: View {
                                         .foregroundStyle(.secondaryText)
                                 }
                                 Spacer()
-                                let jump = host.username.isEmpty
-                                    ? host.hostname
-                                    : "\(host.username)@\(host.hostname)"
-                                if jump == proxyJump {
+                                if hops.contains(host.jumpString) {
                                     Image(systemName: "checkmark")
                                         .foregroundStyle(Color.accentColor)
                                 }
@@ -995,7 +1031,9 @@ struct EditorProxyJumpRow: View {
                     HStack {
                         Text("Custom…")
                         Spacer()
-                        if proxyJumpHostID == nil && !proxyJump.isEmpty {
+                        if !hops.isEmpty && !hops.allSatisfy({ hop in
+                            availableHosts.contains { $0.jumpString == hop }
+                        }) {
                             Image(systemName: "checkmark")
                                 .foregroundStyle(Color.accentColor)
                         }
@@ -1010,11 +1048,41 @@ struct EditorProxyJumpRow: View {
             .frame(minWidth: 260)
         }
         .onAppear {
-            // Show custom field when proxyJump is set but doesn't match any saved host.
-            if proxyJumpHostID == nil && !proxyJump.isEmpty {
+            // Show custom field when proxyJump is set but doesn't fully match saved hosts.
+            let allMatch = !hops.isEmpty && hops.allSatisfy { hop in
+                availableHosts.contains { $0.jumpString == hop }
+            }
+            if !allMatch && !proxyJump.isEmpty {
                 showCustomField = true
             }
         }
+    }
+
+    // MARK: - Hop chain helpers
+
+    /// Append a jump target to the end of the chain (no duplicates).
+    private func appendHop(_ jump: String) {
+        var current = hops
+        if current.contains(jump) { return }
+        current.append(jump)
+        proxyJump = current.joined(separator: ",")
+    }
+
+    /// Remove the hop at `index` from the chain.
+    private func removeHop(at index: Int) {
+        var current = hops
+        guard current.indices.contains(index) else { return }
+        current.remove(at: index)
+        proxyJump = current.joined(separator: ",")
+        if current.isEmpty { showCustomField = false }
+    }
+
+    /// A human-readable label for a jump target string.
+    private func hopLabel(for jump: String) -> String {
+        if let host = availableHosts.first(where: { $0.jumpString == jump }) {
+            return host.displayLabel
+        }
+        return jump
     }
 }
 

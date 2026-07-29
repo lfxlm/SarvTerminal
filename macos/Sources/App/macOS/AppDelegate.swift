@@ -423,7 +423,7 @@ class AppDelegate: NSObject,
         SarvNotifications.shared.requestAuthorizationIfNeeded()
 
         // Git-based update check: once now, then hourly.
-        SarvUpdateChecker.shared.start()
+        // SarvUpdateChecker.shared.start() // disabled
 
         // Observe our appearance so we can report the correct value to libghostty.
         self.appearanceObserver = NSApplication.shared.observe(

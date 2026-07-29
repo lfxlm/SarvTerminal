@@ -560,29 +560,14 @@ fn wakeupCallback(
     t.drainMailbox() catch |err|
         log.err("error draining mailbox err={}", .{err});
 
-    // Render immediately
+    // Render immediately. The GPU's VSync handles frame pacing,
+    // so calling updateFrame on every IO wakeup is safe and ensures
+    // the terminal always shows the most recent output.
     _ = renderCallback(t, undefined, undefined, {});
 
     // PageList mutations maintain their own compression dirty state. Checking
     // it here covers output, resize, and viewport scrolling uniformly.
     t.compression.wake(t);
-
-    // The below is not used anymore but if we ever want to introduce
-    // a configuration to introduce a delay to coalesce renders, we can
-    // use this.
-    //
-    // // If the timer is already active then we don't have to do anything.
-    // if (t.render_c.state() == .active) return .rearm;
-    //
-    // // Timer is not active, let's start it
-    // t.render_h.run(
-    //     &t.loop,
-    //     &t.render_c,
-    //     10,
-    //     Thread,
-    //     t,
-    //     renderCallback,
-    // );
 
     return .rearm;
 }

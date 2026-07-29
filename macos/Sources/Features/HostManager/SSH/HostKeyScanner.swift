@@ -23,6 +23,31 @@ enum HostKeyScanner {
     }
 
     /// Fetch the host's public keys via `ssh-keyscan`. nil if unreachable.
+    /// Compare the host's CURRENT key (via ssh-keyscan) against what's in
+    /// known_hosts. Returns true when the host is known but the key has changed
+    /// (the dangerous man-in-the-middle case). Returns false when the host is
+    /// unknown (caller should check `isKnown` separately) or the key matches.
+    static func hasChanged(host: String, port: Int) async -> Bool {
+        let token = Self.token(host: host, port: port)
+        guard await isKnown(token) else { return false }
+        guard let scan = await Self.scan(host: host, port: port) else { return false }
+        // Parse the scanned key lines into a set of fingerprints.
+        let scannedFingerprints = Set(scan.lines.split(separator: "\n").compactMap { line -> String? in
+            let toks = line.split(separator: " ").map(String.init)
+            return toks.count > 2 ? KnownHostsStore.fingerprint(base64Key: toks[2]) : nil
+        })
+        // Parse the known_hosts entries for this token into fingerprints.
+        let r = await run("/usr/bin/ssh-keygen", ["-F", token])
+        let knownFingerprints = Set(r.stdout.split(separator: "\n").compactMap { line -> String? in
+            let s = line.trimmingCharacters(in: .whitespaces)
+            if s.hasPrefix("#") || s.isEmpty { return nil }
+            let toks = s.split(separator: " ").map(String.init)
+            return toks.count > 2 ? KnownHostsStore.fingerprint(base64Key: toks[2]) : nil
+        })
+        // If none of the scanned keys match any known key, the key has changed.
+        return scannedFingerprints.isDisjoint(with: knownFingerprints)
+    }
+
     static func scan(host: String, port: Int) async -> ScanResult? {
         let r = await run("/usr/bin/ssh-keyscan", ["-p", "\(port)", "-T", "6", host])
         let lines = r.stdout

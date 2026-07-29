@@ -792,21 +792,11 @@ final class VaultsTabsModel: ObservableObject {
         var passwordFile: String?
         var jumpPasswordFile: String?
         if let pw = password, !pw.isEmpty {
-            // Look up the jump host's password if proxyJump is configured.
-            // SSH passwords prompts never include the port, so strip it for
-            // matching (e.g. "user@host:2222" → prompt is "user@host's password:").
-            let jumpHostID = host?.proxyJump
-            let jumpHostPromptID = jumpHostID.map { id -> String in
-                if let colon = id.lastIndex(of: ":") { return String(id[..<colon]) }
-                return id
-            }
-            let jumpPassword: String?
-            if let jumpHostID, !jumpHostID.isEmpty {
-                jumpPassword = Self.jumpPassword(for: jumpHostID)
-            } else {
-                jumpPassword = nil
-            }
-            let env = SSHAskpass.env(forPassword: pw, jumpHostID: jumpHostPromptID, jumpPassword: jumpPassword)
+            // Build the ordered jump-host password list for a multi-hop chain.
+            // SSH prompts never include the port, so strip it for matching
+            // (e.g. "user@host:2222" → prompt is "user@host's password:").
+            let jumpHosts = Self.jumpHostPasswords(for: host?.proxyJump ?? "")
+            let env = SSHAskpass.env(forPassword: pw, jumpHosts: jumpHosts)
             passwordFile = env["SARV_ASKPASS_FILE"]
             jumpPasswordFile = env["SARV_JUMP_ASKPASS_FILE"]
             // Use the `env` command (not bare VAR=val) so the assignments
@@ -823,6 +813,35 @@ final class VaultsTabsModel: ObservableObject {
     /// Find the password of a saved host matching the proxyJump string.
     private static func jumpPassword(for proxyJump: String) -> String? {
         SavedHostsStore.shared.hosts.first { $0.jumpString == proxyJump }?.password
+    }
+
+    /// Build the ordered `(promptID, password)` list for every hop in a
+    /// multi-hop proxy-jump chain. Each `promptID` is the `user@host` string
+    /// (port stripped — ssh's password prompt never includes it) that ssh will
+    /// present to the askpass helper, so the helper can match it. Hops with no
+    /// saved password (key/agent auth) are skipped.
+    static func jumpHostPasswords(for proxyJump: String) -> [(id: String, password: String)] {
+        let hops = parseProxyJump(proxyJump)
+        guard !hops.isEmpty else { return [] }
+        let hosts = SavedHostsStore.shared.hosts
+        var result: [(id: String, password: String)] = []
+        for hop in hops {
+            // The prompt ID: strip the port (ssh never includes it in the
+            // password prompt), keep the user@host part.
+            let promptID: String = {
+                if let colon = hop.lastIndex(of: ":") {
+                    return String(hop[..<colon])
+                }
+                return hop
+            }()
+            // Look up a saved host whose jumpString matches this hop, so we can
+            // pull its stored password. Match by jumpString (user@host[:port]).
+            let pw = hosts.first { $0.jumpString == hop }?.password ?? ""
+            if !pw.isEmpty {
+                result.append((id: promptID, password: pw))
+            }
+        }
+        return result
     }
 
     /// Remove the askpass password temp file (no-op if nil/absent) so we never
@@ -861,24 +880,104 @@ final class VaultsTabsModel: ObservableObject {
 
     /// Before spawning ssh, verify the host key out-of-band. If it's unknown we
     /// scan it and show the trust card; otherwise we proceed straight to connect.
+    ///
+    /// This also pre-checks every jump host in the proxy-jump chain: ssh connects
+    /// to the jump host FIRST, and with `SSH_ASKPASS_REQUIRE=force` its interactive
+    /// host-key prompt would be routed to the password helper (which can't answer
+    /// it), causing "Host key verification failed". By scanning jump hosts here we
+    /// ensure their keys are already in known_hosts before ssh runs.
     @MainActor
     private func runHostKeyPreflight(model: SSHConnectionModel) async {
-        if let host = model.host {
-            let token = HostKeyScanner.token(host: host.hostname, port: host.port)
-            if await HostKeyScanner.isKnown(token) == false {
-                model.addLog("magnifyingglass", .secondary, "Checking host key…")
-                if let scan = await HostKeyScanner.scan(host: host.hostname, port: host.port) {
-                    model.scannedHostKeyLines = scan.lines
-                    model.hostKeyToken = token
-                    model.showLogs = false
-                    model.stage = .needsHostKey(HostKeyInfo(
-                        host: token, keyType: scan.keyType, fingerprint: scan.fingerprint, changed: false))
-                    return   // wait for the user's choice (controller.acceptHostKey)
-                }
-                // Scan failed (host unreachable) — let the real connect surface the error.
+        // First, pre-check every jump host in the chain (they connect before the
+        // target). Unknown jump-host keys are auto-added (accept-new) silently —
+        // we only surface the trust card for the target host itself, to keep the
+        // flow simple. A changed jump-host key will still fail at connect time and
+        // surface the normal error.
+        guard let host = model.host else { proceedConnect(model: model); return }
+        let token = HostKeyScanner.token(host: host.hostname, port: host.port)
+        let hasJump = !host.proxyJump.isEmpty
+
+        if hasJump {
+            // Jump-host path: ssh-keyscan can't tunnel through the jump host, so
+            // pre-scanning is useless and slow (each attempt blocks up to 6s).
+            // Instead, just clear any stale known_hosts entry for the target so
+            // ssh's accept-new accepts the current key. Skip the trust card — the
+            // user already trusts the jump host chain.
+            if await HostKeyScanner.isKnown(token) {
+                await HostKeyScanner.remove(token)
+            }
+            proceedConnect(model: model)
+            return
+        }
+
+        // Direct connection (no jump host): full pre-flight key check.
+        if await HostKeyScanner.isKnown(token) == false {
+            model.addLog("magnifyingglass", .secondary, "Checking host key…")
+            if let scan = await HostKeyScanner.scan(host: host.hostname, port: host.port) {
+                model.scannedHostKeyLines = scan.lines
+                model.hostKeyToken = token
+                model.showLogs = false
+                model.stage = .needsHostKey(HostKeyInfo(
+                    host: token, keyType: scan.keyType, fingerprint: scan.fingerprint, changed: false))
+                return   // wait for the user's choice (controller.acceptHostKey)
+            }
+        } else if await HostKeyScanner.hasChanged(host: host.hostname, port: host.port) {
+            model.addLog("exclamationmark.shield.fill", .orange, "Host key changed")
+            if let scan = await HostKeyScanner.scan(host: host.hostname, port: host.port) {
+                model.scannedHostKeyLines = scan.lines
+                model.hostKeyToken = token
+                model.showLogs = false
+                model.stage = .needsHostKey(HostKeyInfo(
+                    host: token, keyType: scan.keyType, fingerprint: scan.fingerprint, changed: true))
+                return
             }
         }
         proceedConnect(model: model)
+    }
+
+    /// Parse a proxy-jump string into individual jump targets. SSH's `-J` flag
+    /// accepts a comma-separated list (multi-hop), each entry being
+    /// `[user@]host[:port]`.
+    static func parseProxyJump(_ proxyJump: String) -> [String] {
+        proxyJump.split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+    }
+
+    /// Parse a single jump target `[user@]host[:port]` into (host, port).
+    /// Returns port 22 when no port is specified.
+    static func parseJumpTarget(_ target: String) -> (host: String, port: Int) {
+        var s = target
+        // Strip the user@ prefix if present.
+        if let at = s.lastIndex(of: "@") {
+            s = String(s[s.index(after: at)...])
+        }
+        // Extract :port if present (only the LAST colon — IPv6 hosts contain
+        // colons but are bracketed, so a trailing `]:port` or `:port` is the port).
+        if s.hasSuffix("]") {
+            // Bracketed IPv6 with no port.
+            return (String(s.dropFirst().dropLast()), 22)
+        }
+        if let colon = s.lastIndex(of: ":"), !s.hasPrefix("[") {
+            let hostPart = String(s[..<colon])
+            let portPart = String(s[s.index(after: colon)...])
+            // Guard against IPv6 bare addresses (multiple colons = no port).
+            if !hostPart.contains(":"), let p = Int(portPart), p > 0 {
+                return (hostPart, p)
+            }
+        }
+        if s.hasPrefix("[") {
+            // Bracketed IPv6 with possible port: [addr]:port
+            if let close = s.firstIndex(of: "]") {
+                let addr = String(s[s.index(after: s.startIndex)..<close])
+                let rest = s[s.index(after: close)...]
+                if rest.hasPrefix(":"), let p = Int(rest.dropFirst()), p > 0 {
+                    return (addr, p)
+                }
+                return (addr, 22)
+            }
+        }
+        return (s, 22)
     }
 
     /// Continue past the host-key step: collect a password if needed, else spawn ssh.

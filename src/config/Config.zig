@@ -1464,7 +1464,7 @@ link: RepeatableLink = .{},
 /// colors are never overridden), runs only on the primary screen (never full
 /// screen apps like vim/less), and never recolors the in-progress line. Set to
 /// false to disable.
-@"output-colorize": bool = true,
+@"output-colorize": bool = false,
 
 /// Show link previews for a matched URL.
 ///

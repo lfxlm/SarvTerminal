@@ -3522,84 +3522,86 @@ pub fn scrollCallback(
 
     // log.info("SCROLL: delta_y={} delta_x={}", .{ y.delta, x.delta });
 
+    // Use lockDemand instead of a plain lock to prevent starvation by the
+    // IO thread's hot lock/unlock loop during heavy output (cat large file).
+    // The IO thread calls yieldToDemand at batch boundaries, handing the
+    // mutex off to us so the UI never freezes.
+    self.renderer_state.lockDemand();
+    defer self.renderer_state.unlockDemand();
+
+    // If we have an active mouse reporting mode, clear the selection.
+    // The selection can occur if the user uses the shift mod key to
+    // override mouse grabbing from the window.
+    if (self.isMouseReporting()) {
+        try self.setSelection(null);
+    }
+
+    // If we're in alternate screen with alternate scroll enabled, then
+    // we convert to cursor keys. This only happens if we're:
+    // (1) alt screen (2) no explicit mouse reporting and (3) alt
+    // scroll mode enabled.
+    if (self.io.terminal.screens.active_key == .alternate and
+        self.io.terminal.flags.mouse_event == .none and
+        self.io.terminal.modes.get(.mouse_alternate_scroll))
     {
-        self.renderer_state.mutex.lock();
-        defer self.renderer_state.mutex.unlock();
-
-        // If we have an active mouse reporting mode, clear the selection.
-        // The selection can occur if the user uses the shift mod key to
-        // override mouse grabbing from the window.
-        if (self.isMouseReporting()) {
-            try self.setSelection(null);
-        }
-
-        // If we're in alternate screen with alternate scroll enabled, then
-        // we convert to cursor keys. This only happens if we're:
-        // (1) alt screen (2) no explicit mouse reporting and (3) alt
-        // scroll mode enabled.
-        if (self.io.terminal.screens.active_key == .alternate and
-            self.io.terminal.flags.mouse_event == .none and
-            self.io.terminal.modes.get(.mouse_alternate_scroll))
-        {
-            if (y.delta != 0) {
-                // When we send mouse events as cursor keys we always
-                // clear the selection.
-                try self.setSelection(null);
-
-                const seq = if (self.io.terminal.modes.get(.cursor_keys)) seq: {
-                    // cursor key: application mode
-                    break :seq switch (y.direction()) {
-                        .up_right => "\x1bOA",
-                        .down_left => "\x1bOB",
-                    };
-                } else seq: {
-                    // cursor key: normal mode
-                    break :seq switch (y.direction()) {
-                        .up_right => "\x1b[A",
-                        .down_left => "\x1b[B",
-                    };
-                };
-                for (0..y.magnitude()) |_| {
-                    self.queueIo(.{ .write_stable = seq }, .locked);
-                }
-            }
-
-            return;
-        }
-
-        // We have mouse events, are not in an alternate scroll buffer,
-        // or have alternate scroll disabled. In this case, we just run
-        // the normal logic.
-
-        // If we're scrolling up or down, then send a mouse event.
-        if (self.isMouseReporting()) {
-            for (0..@abs(y.delta)) |_| {
-                const pos = try self.rt_surface.getCursorPos();
-                self.mouseReport(switch (y.direction()) {
-                    .up_right => .four,
-                    .down_left => .five,
-                }, .press, self.mouse.mods, pos);
-            }
-
-            for (0..@abs(x.delta)) |_| {
-                const pos = try self.rt_surface.getCursorPos();
-                self.mouseReport(switch (x.direction()) {
-                    .up_right => .six,
-                    .down_left => .seven,
-                }, .press, self.mouse.mods, pos);
-            }
-
-            // If mouse reporting is on, we do not want to scroll the
-            // viewport.
-            return;
-        }
-
         if (y.delta != 0) {
-            // Modify our viewport, this requires a lock since it affects
-            // rendering. We have to switch signs here because our delta
-            // is negative down but our viewport is positive down.
-            self.io.terminal.scrollViewport(.{ .delta = y.delta * -1 });
+            // When we send mouse events as cursor keys we always
+            // clear the selection.
+            try self.setSelection(null);
+
+            const seq = if (self.io.terminal.modes.get(.cursor_keys)) seq: {
+                // cursor key: application mode
+                break :seq switch (y.direction()) {
+                    .up_right => "\x1bOA",
+                    .down_left => "\x1bOB",
+                };
+            } else seq: {
+                // cursor key: normal mode
+                break :seq switch (y.direction()) {
+                    .up_right => "\x1b[A",
+                    .down_left => "\x1b[B",
+                };
+            };
+            for (0..y.magnitude()) |_| {
+                self.queueIo(.{ .write_stable = seq }, .locked);
+            }
         }
+
+        return;
+    }
+
+    // We have mouse events, are not in an alternate scroll buffer,
+    // or have alternate scroll disabled. In this case, we just run
+    // the normal logic.
+
+    // If we're scrolling up or down, then send a mouse event.
+    if (self.isMouseReporting()) {
+        for (0..@abs(y.delta)) |_| {
+            const pos = try self.rt_surface.getCursorPos();
+            self.mouseReport(switch (y.direction()) {
+                .up_right => .four,
+                .down_left => .five,
+            }, .press, self.mouse.mods, pos);
+        }
+
+        for (0..@abs(x.delta)) |_| {
+            const pos = try self.rt_surface.getCursorPos();
+            self.mouseReport(switch (x.direction()) {
+                .up_right => .six,
+                .down_left => .seven,
+            }, .press, self.mouse.mods, pos);
+        }
+
+        // If mouse reporting is on, we do not want to scroll the
+        // viewport.
+        return;
+    }
+
+    if (y.delta != 0) {
+        // Modify our viewport, this requires a lock since it affects
+        // rendering. We have to switch signs here because our delta
+        // is negative down but our viewport is positive down.
+        self.io.terminal.scrollViewport(.{ .delta = y.delta * -1 });
     }
 
     try self.queueRender();

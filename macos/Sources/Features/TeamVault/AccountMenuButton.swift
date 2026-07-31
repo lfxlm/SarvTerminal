@@ -21,7 +21,7 @@ struct AccountMenuButton: View {
                 .frame(width: 28, height: 24)
         }
         .buttonStyle(.plain)
-        .hoverTip(store.activeEmail.map { "Signed in: \($0)" } ?? "Team Vaults (coming soon)")
+        .hoverTipText(store.activeEmail.map { "Signed in: \($0)" } ?? "Team Vaults (coming soon)")
         .popover(isPresented: $showPopover, arrowEdge: .bottom) {
             if store.isAuthenticated {
                 signedInPanel

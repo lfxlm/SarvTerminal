@@ -64,7 +64,7 @@ struct VaultsCommandSidebar: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .hoverTip(t.title)
+                .hoverTipText(t.title)
             }
             Spacer()
         }

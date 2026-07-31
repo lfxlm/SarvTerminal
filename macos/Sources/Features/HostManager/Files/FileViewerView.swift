@@ -204,14 +204,14 @@ struct FileViewerView: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
                 .keyboardShortcut("s", modifiers: .command)
-                .hoverTip(loc(.save_changes_tip))
+                .hoverTipText(loc(.save_changes_tip))
             } else if !(model.isMarkdown && model.renderMarkdown) {
                 Button { model.isEditing = true } label: {
                     Label(loc(.edit_file), systemImage: "square.and.pencil")
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
-                .hoverTip(loc(.edit_file))
+                .hoverTipText(loc(.edit_file))
             }
 
             // Language menu for syntax highlighting (code view only). A pull-down
@@ -235,7 +235,7 @@ struct FileViewerView: View {
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
-                .hoverTip(loc(.syntax_highlighting))
+                .hoverTipText(loc(.syntax_highlighting))
             }
 
             // Indent width (Tab inserts this many spaces) — edit mode only.
@@ -252,7 +252,7 @@ struct FileViewerView: View {
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
-                .hoverTip(loc(.indent))
+                .hoverTipText(loc(.indent))
             }
 
             Menu {
@@ -274,10 +274,10 @@ struct FileViewerView: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
-            .hoverTip(loc(.more))
+            .hoverTipText(loc(.more))
 
             Button { onClose() } label: { Image(systemName: "xmark") }
-                .buttonStyle(.plain).hoverTip(loc(.close))
+                .buttonStyle(.plain).hoverTipText(loc(.close))
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
         .background(Color(NSColor.windowBackgroundColor))
@@ -335,11 +335,11 @@ private struct FindBar: View {
                 .frame(minWidth: 56, alignment: .trailing)
 
             Button { find.run(forward: false) } label: { Image(systemName: "chevron.up") }
-                .buttonStyle(.plain).disabled(find.query.isEmpty).hoverTip(loc(.previous))
+                .buttonStyle(.plain).disabled(find.query.isEmpty).hoverTipText(loc(.previous))
             Button { find.run(forward: true) } label: { Image(systemName: "chevron.down") }
-                .buttonStyle(.plain).disabled(find.query.isEmpty).hoverTip(loc(.next))
+                .buttonStyle(.plain).disabled(find.query.isEmpty).hoverTipText(loc(.next))
             Button { find.close() } label: { Image(systemName: "xmark") }
-                .buttonStyle(.plain).hoverTip(loc(.close_find))
+                .buttonStyle(.plain).hoverTipText(loc(.close_find))
         }
         .padding(.horizontal, 10).padding(.vertical, 6)
         .background(RoundedRectangle(cornerRadius: 8).fill(Color(NSColor.windowBackgroundColor)))

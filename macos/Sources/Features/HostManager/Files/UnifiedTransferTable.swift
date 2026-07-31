@@ -109,6 +109,20 @@ private struct TransferRecordRow: View {
     let onCancel: () -> Void
     let onDelete: () -> Void
 
+    private func formatElapsed(_ seconds: TimeInterval) -> String {
+        if seconds < 60 {
+            return String(format: "%.1fs", seconds)
+        } else if seconds < 3600 {
+            let m = Int(seconds) / 60
+            let s = Int(seconds) % 60
+            return String(format: "%dm%02ds", m, s)
+        } else {
+            let h = Int(seconds) / 3600
+            let m = (Int(seconds) % 3600) / 60
+            return String(format: "%dh%02dm", h, m)
+        }
+    }
+
     var body: some View {
         let fraction = record.totalSize > 0
             ? min(1, Double(record.transferred) / Double(record.totalSize))
@@ -163,10 +177,16 @@ private struct TransferRecordRow: View {
                         ProgressView(value: fraction)
                             .progressViewStyle(.linear)
                             .frame(width: 60)
+                            .hoverTip {
+                                String(format: "%.1f%%", fraction * 100) + " · " + formatElapsed(Date().timeIntervalSince(record.startedAt))
+                            }
                     } else {
                         ProgressView()
                             .scaleEffect(x: 0.7, y: 0.4, anchor: .leading)
                             .frame(width: 50)
+                            .hoverTip {
+                                formatElapsed(Date().timeIntervalSince(record.startedAt))
+                            }
                     }
                 case .completed:
                     Text(loc(.done)).foregroundStyle(.green)
@@ -189,10 +209,12 @@ private struct TransferRecordRow: View {
             // Action
             switch record.status {
             case .inProgress:
-                Button(loc(.cancel), action: onCancel)
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.red)
-                    .font(.system(size: 11))
+                Button(action: onCancel) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 11))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.red)
             case .completed, .failed, .cancelled:
                 Button(action: onDelete) {
                     Image(systemName: "xmark.circle.fill")

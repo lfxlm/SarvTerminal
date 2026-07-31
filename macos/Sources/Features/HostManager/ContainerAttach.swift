@@ -262,7 +262,7 @@ struct ContainersTab: View {
             }
             .buttonStyle(.plain)
             .disabled(model.loading)
-            .hoverTip("Refresh")
+            .hoverTipText("Refresh")
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
@@ -348,7 +348,7 @@ struct ContainersTab: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
-            .hoverTip("Open a shell here")
+            .hoverTipText("Open a shell here")
         }
         .padding(.horizontal, 8).padding(.vertical, 6)
         .listRowHover()

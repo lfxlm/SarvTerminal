@@ -129,6 +129,9 @@ enum LocalDataCrypto {
         try? writeKeyFile(account, legacy)
         return legacy
         #else
+        // A Release app must never read the debug key files; sweep any
+        // leftover dev `keystore` directory once on first key access.
+        _ = legacyKeystoreCleanup
         return keychainRead(account)
         #endif
     }
@@ -146,6 +149,14 @@ enum LocalDataCrypto {
     }
 
     #if !DEBUG
+    /// Debug builds keep key material in `configDir/keystore` files; the
+    /// Release app must never read them. Remove any leftover directory from a
+    /// dev install — once, on first key access.
+    private static let legacyKeystoreCleanup: Void = {
+        let url = AppPaths.configDir.appendingPathComponent("keystore", isDirectory: true)
+        try? FileManager.default.removeItem(at: url)
+    }()
+
     private static func keychainWrite(_ account: String, _ data: Data) -> Bool {
         let base: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,

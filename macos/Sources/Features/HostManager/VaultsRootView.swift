@@ -119,7 +119,7 @@ struct VaultsRootView: View {
 .animation(.easeInOut(duration: 0.18), value: tabs.editingHost?.id)
         .sheet(isPresented: $tabs.presentingSerialConnect) { SerialConnectSheet() }
         // Single window-level tooltip layer, above everything (panes, choosers,
-        // sidebar). Sits in the named space that every `.hoverTip` resolves in.
+        // sidebar). Sits in the named space that every `.hoverTipText` resolves in.
         .overlay { TooltipOverlay() }
         .coordinateSpace(name: TooltipPresenter.space)
     }
@@ -147,7 +147,7 @@ struct VaultsRootView: View {
             }
             .buttonStyle(.plain)
             .disabled(!inTerminal)
-            .hoverTip(inTerminal
+            .hoverTipText(inTerminal
                       ? "Scratchpad — stage & send commands (⌘⇧E)"
                       : "Scratchpad — available in terminal tabs")
             // Focus mode (the pane sidebar) is opened with ⌘⇧M — no top-bar
@@ -167,7 +167,7 @@ struct VaultsRootView: View {
             }
             .buttonStyle(.plain)
             .disabled(!inTerminal)
-            .hoverTip(inTerminal
+            .hoverTipText(inTerminal
                       ? "Command sidebar (snippets, history, themes, search)"
                       : "Command sidebar — available in terminal tabs")
             AccountMenuButton()

@@ -227,7 +227,7 @@ struct AIAssistBanner: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
-                    .hoverTip("Paste the suggested command into the terminal (won't run it)")
+                    .hoverTipText("Paste the suggested command into the terminal (won't run it)")
                 }
                 Button {
                     let copy = model.suggestedCommand ?? text
@@ -269,6 +269,6 @@ struct AIAssistBanner: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .hoverTip("Dismiss")
+        .hoverTipText("Dismiss")
     }
 }

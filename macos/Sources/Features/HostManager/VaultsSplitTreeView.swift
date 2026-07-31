@@ -327,7 +327,7 @@ private struct VaultsSplitLeaf: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .hoverTip(help)
+        .hoverTipText(help)
     }
 }
 
@@ -348,7 +348,7 @@ private struct PaneCloseButton: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .hoverTip("Close pane")
+        .hoverTipText("Close pane")
     }
 }
 

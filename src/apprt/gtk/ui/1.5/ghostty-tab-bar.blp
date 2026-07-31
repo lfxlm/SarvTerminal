@@ -1,0 +1,58 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $GhosttyTabBar {
+  styles [
+    "flat",
+  ]
+
+  Box {
+    orientation: horizontal;
+    spacing: 0;
+
+    // Left scroll arrow button (hidden by default)
+    Gtk.Button arrow_left {
+      styles [
+        "flat",
+        "image-button",
+      ]
+      icon-name: "go-previous-symbolic";
+      tooltip-text: _("Previous Tab");
+      can-focus: false;
+      focus-on-click: false;
+      visible: false;
+      clicked => $arrow_left_clicked();
+    }
+
+    // Scrollable area for tab buttons
+    Gtk.ScrolledWindow scroll_area {
+      hscrollbar-policy: never;
+      vscrollbar-policy: never;
+      propagate-natural-height: true;
+      propagate-natural-width: false;
+      min-content-width: 0;
+      preferred-content-width: 0;
+      max-content-width: @max(0, 10000);
+
+      Gtk.Box tab_strip {
+        orientation: horizontal;
+        spacing: 2;
+        padding: 4;
+      }
+    }
+
+    // Right scroll arrow button (hidden by default)
+    Gtk.Button arrow_right {
+      styles [
+        "flat",
+        "image-button",
+      ]
+      icon-name: "go-next-symbolic";
+      tooltip-text: _("Next Tab");
+      can-focus: false;
+      focus-on-click: false;
+      visible: false;
+      clicked => $arrow_right_clicked();
+    }
+  }
+}

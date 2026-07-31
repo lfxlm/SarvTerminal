@@ -574,7 +574,7 @@ extension Ghostty {
                     Image(systemName: "chevron.up")
                 })
                 .buttonStyle(SearchButtonStyle())
-                .hoverTip("Next match (↩)")
+                .hoverTipText("Next match (↩)")
 
                 Button(action: {
                     guard let surface = surfaceView.surface else { return }
@@ -584,7 +584,7 @@ extension Ghostty {
                     Image(systemName: "chevron.down")
                 })
                 .buttonStyle(SearchButtonStyle())
-                .hoverTip("Previous match (⇧↩)")
+                .hoverTipText("Previous match (⇧↩)")
 
                 Button(action: {
                     withAnimation(.easeInOut(duration: 0.12)) { showAdvanced.toggle() }
@@ -598,13 +598,13 @@ extension Ghostty {
                               ? Color.accentColor.opacity(0.30)
                               : (showAdvanced ? Color.primary.opacity(0.12) : Color.clear))
                 )
-                .hoverTip("Advanced search options")
+                .hoverTipText("Advanced search options")
 
                 Button(action: onClose) {
                     Image(systemName: "xmark")
                 }
                 .buttonStyle(SearchButtonStyle())
-                .hoverTip("Close search (Esc)")
+                .hoverTipText("Close search (Esc)")
             }
         }
 
@@ -620,7 +620,7 @@ extension Ghostty {
                         Text("Only matching lines").font(.caption)
                     }
                     .toggleStyle(.checkbox)
-                    .hoverTip("Show only lines that match, hiding everything else (like grep)")
+                    .hoverTipText("Show only lines that match, hiding everything else (like grep)")
 
                     if searchState.filterEnabled {
                         optionToggle("Aa", isOn: $searchState.caseSensitive, tip: "Match case")
@@ -632,10 +632,10 @@ extension Ghostty {
                     HStack(spacing: 6) {
                         Text("Before").font(.caption2).foregroundColor(.secondaryText)
                         SearchContextField(value: $searchState.linesBefore)
-                            .hoverTip("Lines of context to keep before each match (grep -B)")
+                            .hoverTipText("Lines of context to keep before each match (grep -B)")
                         Text("After").font(.caption2).foregroundColor(.secondaryText)
                         SearchContextField(value: $searchState.linesAfter)
-                            .hoverTip("Lines of context to keep after each match (grep -A)")
+                            .hoverTipText("Lines of context to keep after each match (grep -A)")
                     }
                     .fixedSize()
                 }
@@ -656,7 +656,7 @@ extension Ghostty {
                 RoundedRectangle(cornerRadius: 6)
                     .fill(isOn.wrappedValue ? Color.accentColor.opacity(0.30) : Color.clear)
             )
-            .hoverTip(tip)
+            .hoverTipText(tip)
         }
 
         private var clipShape: some Shape {

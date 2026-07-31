@@ -104,7 +104,7 @@ struct VaultsFocusModeView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .hoverTip(help)
+        .hoverTipText(help)
     }
 
     // MARK: - Main pane
@@ -149,7 +149,7 @@ struct VaultsFocusModeView: View {
 // MARK: - Hover tooltips (window-level, always-on-top, edge-aware)
 
 /// A single presenter that the window-level `TooltipOverlay` (mounted once in
-/// `VaultsRootView`) observes. Each `.hoverTip(...)` reports its text and the
+/// `VaultsRootView`) observes. Each `.hoverTipText(...)` reports its text and the
 /// hovered view's frame here, so the tip is drawn at the very top of the
 /// hierarchy — never clipped by an ancestor mask, never pushed off-screen.
 final class TooltipPresenter: ObservableObject {
@@ -180,7 +180,10 @@ final class TooltipPresenter: ObservableObject {
 }
 
 extension View {
-    func hoverTip(_ text: String) -> some View {
+    /// Legacy tooltip: static string, fixed 0.2s appear delay. Named
+    /// `hoverTipText` to avoid ambiguity with the live-updating closure
+    /// variant `hoverTip { }` (HoverTooltip floating window).
+    func hoverTipText(_ text: String) -> some View {
         modifier(HoverTip(text: text))
     }
 }

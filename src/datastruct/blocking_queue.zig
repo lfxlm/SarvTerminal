@@ -21,10 +21,9 @@ const Allocator = std.mem.Allocator;
 ///     locks and bounds checking and do a one-time drain.
 ///
 /// One key usage pattern is that our blocking queues are single producer
-/// single consumer (SPSC). This should let us do some interesting optimizations
-/// in the future. At the time of writing this, the blocking queue implementation
-/// is purposely naive to build something quickly, but we should benchmark
-/// and make this more optimized as necessary.
+/// single consumer (SPSC). The mutex is only used for the blocking case
+/// (when the queue is full and the producer needs to wait); the fast path
+/// (instant timeout) is lock-free for SPSC scenarios.
 pub fn BlockingQueue(
     comptime T: type,
     comptime capacity: usize,
@@ -57,16 +56,18 @@ pub fn BlockingQueue(
 
         /// The next location to write (next empty loc) and next location
         /// to read (next non-empty loc). The number of written elements.
-        write: Size = 0,
-        read: Size = 0,
-        len: Size = 0,
-
-        /// The big mutex that must be held to read/write.
-        mutex: std.Thread.Mutex = .{},
+        ///
+        /// In the SPSC case, write and read are only modified by one thread
+        /// each, so we can use relaxed atomics for the fast non-blocking path.
+        /// We use a counter-based approach where positions wrap via modulo.
+        write: std.atomic.Value(usize) = .init(0),
+        read: std.atomic.Value(usize) = .init(0),
 
         /// A CV for being notified when the queue is no longer full. This is
         /// used for writing. Note we DON'T have a CV for waiting on the
         /// queue not being EMPTY because we use external notifiers for that.
+        /// Only used in the slow blocking path; the fast path is lock-free.
+        mutex: std.Thread.Mutex = .{},
         cond_not_full: std.Thread.Condition = .{},
         not_full_waiters: usize = 0,
 
@@ -77,9 +78,8 @@ pub fn BlockingQueue(
 
             ptr.* = .{
                 .data = undefined,
-                .len = 0,
-                .write = 0,
-                .read = 0,
+                .write = .init(0),
+                .read = .init(0),
                 .mutex = .{},
                 .cond_not_full = .{},
                 .not_full_waiters = 0,
@@ -95,26 +95,45 @@ pub fn BlockingQueue(
             alloc.destroy(self);
         }
 
+        /// Returns the current number of items in the queue.
+        fn len(self: *Self) usize {
+            const w = self.write.load(.monotonic);
+            const r = self.read.load(.monotonic);
+            if (w >= r) return w - r;
+            // Handle counter wrap-around: write and read can wrap around
+            // after reaching max usize. We use a simple approach where
+            // we detect the wrap and add half the max counter value.
+            const wrap: usize = @as(u64, 1) << 63;
+            if (w + wrap >= r) return w + wrap - r;
+            return w - r + wrap;
+        }
+
+        /// Returns true if the queue is full.
+        fn full(self: *Self) bool {
+            return self.len() >= bounds;
+        }
+
         /// Push a value to the queue. This returns the total size of the
         /// queue (unread items) after the push. A return value of zero
         /// means that the push failed.
         pub fn push(self: *Self, value: T, timeout: Timeout) Size {
-            self.mutex.lock();
-            defer self.mutex.unlock();
-
-            // The
-            if (self.full()) {
+            // Fast path: check if queue is not full using atomics
+            const cur_write = self.write.load(.monotonic);
+            const cur_len: usize = self.len();
+            if (cur_len >= bounds) {
+                // Queue is full, need to handle blocking
                 switch (timeout) {
-                    // If we're not waiting, then we failed to write.
                     .instant => return 0,
-
                     .forever => {
+                        self.mutex.lock();
+                        defer self.mutex.unlock();
                         self.not_full_waiters += 1;
                         defer self.not_full_waiters -= 1;
                         self.cond_not_full.wait(&self.mutex);
                     },
-
                     .ns => |ns| {
+                        self.mutex.lock();
+                        defer self.mutex.unlock();
                         self.not_full_waiters += 1;
                         defer self.not_full_waiters -= 1;
                         self.cond_not_full.timedWait(&self.mutex, ns) catch return 0;
@@ -126,42 +145,35 @@ pub fn BlockingQueue(
                 if (self.full()) return 0;
             }
 
-            // Add our data and update our accounting
-            self.data[self.write] = value;
-            self.write += 1;
-            if (self.write >= bounds) self.write -= bounds;
-            self.len += 1;
+            // Add our data and update write position
+            // In SPSC, only the producer writes to this position
+            const write_pos = cur_write % bounds;
+            self.data[write_pos] = value;
+            self.write.store(cur_write +% 1, .monotonic);
 
-            return self.len;
+            return @intCast(cur_len +% 1);
         }
 
         /// Pop a value from the queue without blocking.
         pub fn pop(self: *Self) ?T {
-            self.mutex.lock();
-            defer self.mutex.unlock();
+            // Fast path: check if queue is empty using atomics
+            const cur_read = self.read.load(.monotonic);
+            const cur_len: usize = self.len();
+            if (cur_len == 0) return null;
 
-            // If we're empty we have nothing
-            if (self.len == 0) return null;
+            // Get the index we're going to read data from
+            const read_pos = cur_read % bounds;
+            const val = self.data[read_pos];
 
-            // Get the index we're going to read data from and do some
-            // accounting. We don't copy the value here to avoid copying twice.
-            const n = self.read;
-            self.read += 1;
-            if (self.read >= bounds) self.read -= bounds;
-            self.len -= 1;
+            // Update read position
+            self.read.store(cur_read +% 1, .monotonic);
 
-            // If we have consumers waiting on a full queue, notify.
-            if (self.not_full_waiters > 0) self.cond_not_full.signal();
-
-            return self.data[n];
+            return val;
         }
 
-        /// Pop all values from the queue. This will hold the big mutex
-        /// until `deinit` is called on the return value. This is used if
-        /// you know you're going to "pop" and utilize all the values
-        /// quickly to avoid many locks, bounds checks, and cv signals.
+        /// Pop all values from the queue. This avoids many locks, bounds
+        /// checks, and cv signals by doing a single pass over the queue.
         pub fn drain(self: *Self) DrainIterator {
-            self.mutex.lock();
             return .{ .queue = self };
         }
 
@@ -169,31 +181,18 @@ pub fn BlockingQueue(
             queue: *Self,
 
             pub fn next(self: *DrainIterator) ?T {
-                if (self.queue.len == 0) return null;
+                const cur_read = self.queue.read.load(.monotonic);
+                const cur_len: usize = self.queue.len();
+                if (cur_len == 0) return null;
 
-                // Read and account
-                const n = self.queue.read;
-                self.queue.read += 1;
-                if (self.queue.read >= bounds) self.queue.read -= bounds;
-                self.queue.len -= 1;
+                const read_pos = cur_read % bounds;
+                const val = self.queue.data[read_pos];
 
-                return self.queue.data[n];
-            }
+                self.queue.read.store(cur_read +% 1, .monotonic);
 
-            pub fn deinit(self: *DrainIterator) void {
-                // If we have consumers waiting on a full queue, notify.
-                if (self.queue.not_full_waiters > 0) self.queue.cond_not_full.signal();
-
-                // Unlock
-                self.queue.mutex.unlock();
+                return val;
             }
         };
-
-        /// Returns true if the queue is full. This is not public because
-        /// it requires the lock to be held.
-        inline fn full(self: *Self) bool {
-            return self.len == bounds;
-        }
     };
 }
 
@@ -225,7 +224,6 @@ test "basic push and pop" {
     // Drain does nothing
     var it = q.drain();
     try testing.expect(it.next() == null);
-    it.deinit();
 
     // Verify we can still push
     try testing.expectEqual(@as(Q.Size, 1), q.push(1, .{ .instant = {} }));

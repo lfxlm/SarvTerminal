@@ -181,3 +181,38 @@ label.resize-overlay {
   margin: 0;
   padding: 0;
 }
+
+/*
+ * GhosttyTabBar - Custom tab bar with scrolling support
+ */
+.ghostty-tab-button {
+  border-radius: 6px;
+  padding: 4px 12px;
+  margin: 0 2px;
+  min-height: 28px;
+  background-color: rgba(0, 0, 0, 0.05);
+  border: none;
+}
+
+.ghostty-tab-button:hover {
+  background-color: rgba(0, 0, 0, 0.1);
+}
+
+.ghostty-tab-button:checked,
+.ghostty-tab-button.active {
+  background-color: rgba(0, 0, 0, 0.15);
+}
+
+.ghostty-tab-label {
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+
+/* Arrow buttons */
+.ghostty-tab-bar arrow {
+  padding: 4px;
+  margin: 0 2px;
+}

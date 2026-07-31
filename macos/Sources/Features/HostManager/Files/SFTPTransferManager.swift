@@ -55,9 +55,23 @@ final class SFTPTransferManager: ObservableObject {
     /// All in-flight transfer tasks, keyed by record ID, for cancellation.
     private var activeTasks: [UUID: Task<Void, Never>] = [:]
 
+    /// Maximum number of completed/failed/cancelled records to keep in memory.
+    private let maxCompletedRecords = 50
+
     func cancelTransfer() {
         for (_, task) in activeTasks { task.cancel() }
         activeTasks.removeAll()
+    }
+
+    /// Clean up completed records when they exceed the limit.
+    func cleanupCompletedRecords() {
+        let nonActive = transfers.filter { $0.status != .inProgress }
+        if nonActive.count > maxCompletedRecords {
+            let active = transfers.filter { $0.status == .inProgress }
+            let recentCompleted = nonActive.prefix(maxCompletedRecords)
+            let recentIds = Set(recentCompleted.map(\.id))
+            transfers = transfers.filter { $0.status == .inProgress || recentIds.contains($0.id) }
+        }
     }
 
     /// Start a transfer from the active source tab to the active dest tab.
@@ -183,21 +197,13 @@ final class SFTPTransferManager: ObservableObject {
             dest.path,
             FileTransfer.finalName(for: item, resolution: resolution)
         )
-        let start = Date()
-
         // Progress poller — uses `id` directly so it never confuses records.
-        let poller = Task { @MainActor [id] in
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 800_000_000)
-                if Task.isCancelled { break }
-                guard let idx = transfers.firstIndex(where: { $0.id == id })
-                else { break }
-                let size = await dest.backend.fileSize(destPath)
-                    ?? transfers[idx].transferred
-                let elapsed = max(0.001, Date().timeIntervalSince(start))
-                transfers[idx].transferred = size
-                transfers[idx].bytesPerSecond = Double(size) / elapsed
-            }
+        let poller = TransferProgressPoller.start(destBackend: dest.backend, destPath: destPath) { [self, id] size, elapsed in
+            guard let idx = transfers.firstIndex(where: { $0.id == id })
+            else { return false }
+            transfers[idx].transferred = size ?? transfers[idx].transferred
+            transfers[idx].bytesPerSecond = Double(transfers[idx].transferred) / elapsed
+            return true
         }
 
         do {
@@ -209,6 +215,7 @@ final class SFTPTransferManager: ObservableObject {
                 }
                 transfers[idx].status = .completed
             }
+            cleanupCompletedRecords()
         } catch {
             if Task.isCancelled {
                 if let idx = transfers.firstIndex(where: { $0.id == id }) {
@@ -221,6 +228,7 @@ final class SFTPTransferManager: ObservableObject {
                 if let idx = transfers.firstIndex(where: { $0.id == id }) {
                     transfers[idx].status = .failed(msg)
                 }
+                cleanupCompletedRecords()
             }
         }
         poller.cancel()

@@ -19,11 +19,13 @@ struct SftpSidePanelView: View {
         let direction: Direction
         var transferred: Int64
         var bytesPerSecond: Double
+        var startTime: Date
         var status: Status
-        enum Status { case uploading, completed, failed(String) }
+        enum Status { case uploading, completed, failed(String), cancelled }
         enum Direction { case upload, download }
     }
     @State private var uploads: [UploadProgress] = []
+    @State private var activePollers: [Task<Void, Never>] = []
 
     // ── Dialog state ──────────────────────────────────────────────
     @State private var showNewFolder = false
@@ -32,6 +34,12 @@ struct SftpSidePanelView: View {
     @State private var permTarget: FileItem?
     @State private var pendingDeletion: [FileItem]?
     @State private var imagePreview: ImagePreviewData?
+    /// Queue of URLs whose remote name already exists; shown one-at-a-time via ConflictDialog.
+    @State private var uploadConflictQueue: [URL] = []
+    /// URLs that had no conflict and can be uploaded immediately once the queue is resolved.
+    @State private var uploadNoConflict: [URL] = []
+    /// Debounced remote reload so batch uploads refresh the listing once, not N times.
+    @State private var reloadTask: Task<Void, Never>?
 
     struct ImagePreviewData: Identifiable {
         let id = UUID()
@@ -168,6 +176,20 @@ struct SftpSidePanelView: View {
                 ImagePreviewView(url: p.url, fileName: p.fileName) { imagePreview = nil }
             }
         }
+        .overlay {
+            if let url = uploadConflictQueue.first {
+                ConflictDialog(name: url.lastPathComponent, showApplyToAll: true) { resolution, all in
+                    resolveUploadConflict(resolution, applyToAll: all)
+                }
+            }
+        }
+        .onDisappear {
+            // Clean up all active pollers when the panel disappears
+            activePollers.forEach { $0.cancel() }
+            activePollers.removeAll()
+            reloadTask?.cancel()
+            uploads.removeAll()
+        }
     }
 
     // -- Drag-and-drop state --
@@ -264,14 +286,32 @@ struct SftpSidePanelView: View {
                 case .uploading:
                     if u.fileSize > 0 {
                         let f = min(1, Double(max(0, u.transferred)) / Double(u.fileSize))
-                        ProgressView(value: f).progressViewStyle(.linear).frame(width: 50)
+                        ProgressView(value: f)
+                            .progressViewStyle(.linear)
+                            .frame(width: 50)
+                            .hoverTip {
+                                String(format: "%.1f%%", f * 100) + " · " + formatElapsed(Date().timeIntervalSince(u.startTime))
+                            }
                     } else {
-                        ProgressView().scaleEffect(x: 0.7, y: 0.4, anchor: .leading).frame(width: 40)
+                        ProgressView()
+                            .scaleEffect(x: 0.7, y: 0.4, anchor: .leading)
+                            .frame(width: 40)
+                            .hoverTip {
+                                formatElapsed(Date().timeIntervalSince(u.startTime))
+                            }
                     }
                 case .completed:
                     Text(loc(.done)).foregroundStyle(.green)
+                        .hoverTip {
+                            formatElapsed(Date().timeIntervalSince(u.startTime))
+                        }
                 case .failed(let msg):
                     Text(msg).foregroundStyle(.red).lineLimit(1)
+                        .hoverTip {
+                            formatElapsed(Date().timeIntervalSince(u.startTime))
+                        }
+                case .cancelled:
+                    Text(loc(.cancelled)).foregroundStyle(.secondaryText)
                 }
                 if case .uploading = u.status, u.bytesPerSecond > 0 {
                     Text("\(byteString(Int64(u.bytesPerSecond)))/s")
@@ -281,10 +321,14 @@ struct SftpSidePanelView: View {
             }
             .frame(width: 90, alignment: .leading)
 
-            // Dismiss
+            // Cancel / Dismiss
             switch u.status {
-            case .uploading: EmptyView()
-            case .completed, .failed:
+            case .uploading:
+                Button { uploads.removeAll(where: { $0.id == u.id }) } label: {
+                    Image(systemName: "xmark.circle.fill").font(.system(size: 11))
+                }
+                .buttonStyle(.plain).foregroundStyle(.secondaryText)
+            case .completed, .failed, .cancelled:
                 Button { uploads.removeAll(where: { $0.id == u.id }) } label: {
                     Image(systemName: "xmark.circle.fill").font(.system(size: 11))
                 }
@@ -298,6 +342,20 @@ struct SftpSidePanelView: View {
 
     private func byteString(_ n: Int64) -> String {
         ByteCountFormatter.string(fromByteCount: n, countStyle: .file)
+    }
+
+    private func formatElapsed(_ seconds: TimeInterval) -> String {
+        if seconds < 60 {
+            return String(format: "%.1fs", seconds)
+        } else if seconds < 3600 {
+            let m = Int(seconds) / 60
+            let s = Int(seconds) % 60
+            return String(format: "%dm%02ds", m, s)
+        } else {
+            let h = Int(seconds) / 3600
+            let m = (Int(seconds) % 3600) / 60
+            return String(format: "%dh%02dm", h, m)
+        }
     }
 
     // MARK: - File actions
@@ -340,7 +398,7 @@ struct SftpSidePanelView: View {
                 let prog = UploadProgress(
                     fileName: item.name, fileSize: size,
                     direction: .download, transferred: 0, bytesPerSecond: 0,
-                    status: .uploading
+                    startTime: Date(), status: .uploading
                 )
                 uploads.append(prog)
                 let pid = prog.id
@@ -377,7 +435,98 @@ struct SftpSidePanelView: View {
     }
 
     /// Core upload logic shared by the file-picker button and drag-and-drop.
+    /// Checks for name conflicts first, shows ConflictDialog one-at-a-time.
     private func uploadURLs(_ urls: [URL]) {
+        Task {
+            var conflicts: [URL] = []
+            var safe: [URL] = []
+            for url in urls {
+                if await remote.exists(name: url.lastPathComponent) {
+                    conflicts.append(url)
+                } else {
+                    safe.append(url)
+                }
+            }
+            if conflicts.isEmpty {
+                performUpload(urls, resolution: .replace)
+            } else {
+                uploadNoConflict = safe
+                uploadConflictQueue = conflicts
+            }
+        }
+    }
+
+    /// Handle a user choice from the per-file ConflictDialog.
+    /// `applyToAll` resolves the whole remaining queue with one choice.
+    private func resolveUploadConflict(_ resolution: ConflictResolution, applyToAll: Bool) {
+        guard !uploadConflictQueue.isEmpty else { return }
+
+        // "Apply to all remaining" — resolve the whole queue at once.
+        if applyToAll {
+            let remaining = uploadConflictQueue
+            let safe = uploadNoConflict
+            uploadConflictQueue.removeAll()
+            uploadNoConflict.removeAll()
+            switch resolution {
+            case .stop:
+                markCancelled(remaining + safe)
+            case .skip:
+                if !safe.isEmpty { performUpload(safe, resolution: .replace) }
+            case .replace, .duplicate, .merge:
+                performUpload(remaining, resolution: resolution)
+                if !safe.isEmpty { performUpload(safe, resolution: .replace) }
+            }
+            return
+        }
+
+        let url = uploadConflictQueue.removeFirst()
+        switch resolution {
+        case .stop:
+            // Abort everything remaining — surface the aborted uploads in the list.
+            markCancelled(uploadConflictQueue + uploadNoConflict)
+            uploadConflictQueue.removeAll()
+            uploadNoConflict.removeAll()
+            return
+        case .skip:
+            break // just skip this file
+        case .replace, .duplicate, .merge:
+            performUpload([url], resolution: resolution)
+        }
+        // If queue is empty, also upload all non-conflicting files.
+        if uploadConflictQueue.isEmpty && !uploadNoConflict.isEmpty {
+            performUpload(uploadNoConflict, resolution: .replace)
+            uploadNoConflict.removeAll()
+        }
+    }
+
+    /// Record aborted uploads in the transfer list so the user sees what was cancelled.
+    private func markCancelled(_ urls: [URL]) {
+        let fm = FileManager.default
+        for url in urls {
+            let size = (try? fm.attributesOfItem(atPath: url.path))?[.size] as? NSNumber
+            uploads.append(UploadProgress(
+                fileName: url.lastPathComponent,
+                fileSize: size?.int64Value ?? 0,
+                direction: .upload,
+                transferred: 0,
+                bytesPerSecond: 0,
+                startTime: Date(),
+                status: .cancelled))
+        }
+    }
+
+    /// Debounced reload: one refresh after the burst of upload completions settles.
+    private func scheduleReload() {
+        reloadTask?.cancel()
+        reloadTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            guard !Task.isCancelled else { return }
+            await remote.reload()
+        }
+    }
+
+    /// Actually execute the upload (after any conflict confirmation).
+    private func performUpload(_ urls: [URL], resolution: ConflictResolution) {
         let fm = FileManager.default
         let local = LocalFileBackend()
         let destDir = remote.path
@@ -395,22 +544,26 @@ struct SftpSidePanelView: View {
             let progress = UploadProgress(
                 fileName: url.lastPathComponent, fileSize: fileSize,
                 direction: .upload, transferred: 0, bytesPerSecond: 0,
-                status: .uploading
+                startTime: Date(), status: .uploading
             )
             uploads.append(progress)
             let pid = progress.id
             let poller = startPoller(for: pid, destBackend: remote.backend, destPath: destPath, totalSize: fileSize)
+            activePollers.append(poller)
 
             Task {
-                defer { poller.cancel() }
+                defer {
+                    poller.cancel()
+                    activePollers.removeAll { $0 == poller }
+                }
                 do {
                     try await FileTransfer.copy(
                         item: item, from: local, to: remote.backend,
-                        destDir: destDir, resolution: .replace
+                        destDir: destDir, resolution: resolution
                     )
                     snapToFullSize(pid)
                     setStatus(pid, .completed)
-                    await remote.reload()
+                    scheduleReload()
                 } catch {
                     setStatus(pid, .failed(error.localizedDescription))
                 }
@@ -419,18 +572,12 @@ struct SftpSidePanelView: View {
     }
 
     private func startPoller(for pid: UUID, destBackend: FileBackend, destPath: String, totalSize: Int64) -> Task<Void, Never> {
-        let start = Date()
-        return Task { @MainActor in
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 800_000_000)
-                if Task.isCancelled { break }
-                guard let idx = uploads.firstIndex(where: { $0.id == pid }),
-                      case .uploading = uploads[idx].status else { break }
-                let size = await destBackend.fileSize(destPath) ?? uploads[idx].transferred
-                let elapsed = max(0.001, Date().timeIntervalSince(start))
-                uploads[idx].transferred = size
-                uploads[idx].bytesPerSecond = Double(size) / elapsed
-            }
+        TransferProgressPoller.start(destBackend: destBackend, destPath: destPath) { size, elapsed in
+            guard let idx = uploads.firstIndex(where: { $0.id == pid }),
+                  case .uploading = uploads[idx].status else { return false }
+            uploads[idx].transferred = size ?? uploads[idx].transferred
+            uploads[idx].bytesPerSecond = Double(uploads[idx].transferred) / elapsed
+            return true
         }
     }
 

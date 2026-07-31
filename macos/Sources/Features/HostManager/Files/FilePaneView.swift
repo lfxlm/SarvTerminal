@@ -63,9 +63,9 @@ struct FilePaneView: View {
     private var toolbar: some View {
         HStack(spacing: 8) {
             Button { model.goBack() } label: { Image(systemName: "chevron.left") }
-                .buttonStyle(.plain).disabled(!model.canGoBack).hoverTip(loc(.back_tooltip))
+                .buttonStyle(.plain).disabled(!model.canGoBack).hoverTipText(loc(.back_tooltip))
             Button { model.goForward() } label: { Image(systemName: "chevron.right") }
-                .buttonStyle(.plain).disabled(!model.canGoForward).hoverTip(loc(.forward_tooltip))
+                .buttonStyle(.plain).disabled(!model.canGoForward).hoverTipText(loc(.forward_tooltip))
 
             if showHostPicker {
                 Button { onAction(.chooseHost) } label: {
@@ -77,7 +77,7 @@ struct FilePaneView: View {
                     .padding(.horizontal, 8).padding(.vertical, 4)
                     .background(RoundedRectangle(cornerRadius: 6).fill(Color.secondary.opacity(0.12)))
                 }
-                .buttonStyle(.plain).hoverTip(loc(.change_host_tooltip))
+                .buttonStyle(.plain).hoverTipText(loc(.change_host_tooltip))
             }
 
             breadcrumbBar
@@ -90,7 +90,7 @@ struct FilePaneView: View {
             }
             .padding(.horizontal, 6).padding(.vertical, 3)
             .background(RoundedRectangle(cornerRadius: 5).fill(Color.secondary.opacity(0.08)))
-            .hoverTip(loc(.filter_files))
+            .hoverTipText(loc(.filter_files))
 
             if model.isLoading { ProgressView().controlSize(.small) }
 
@@ -100,15 +100,15 @@ struct FilePaneView: View {
                     .foregroundStyle(hasBookmarkForCurrentDir ? Color.accentColor : Color.secondary)
             }
             .buttonStyle(.plain)
-            .hoverTip(loc(.bookmarks_tooltip))
+            .hoverTipText(loc(.bookmarks_tooltip))
             .popover(isPresented: $showBookmarks, arrowEdge: .bottom) {
                 bookmarkPopover
             }
 
             Button { onAction(.newFolder) } label: { Image(systemName: "folder.badge.plus") }
-                .buttonStyle(.plain).hoverTip(loc(.new_folder_tooltip))
+                .buttonStyle(.plain).hoverTipText(loc(.new_folder_tooltip))
             Button { onAction(.refresh) } label: { Image(systemName: "arrow.clockwise") }
-                .buttonStyle(.plain).hoverTip(loc(.refresh_tooltip))
+                .buttonStyle(.plain).hoverTipText(loc(.refresh_tooltip))
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
     }
@@ -143,7 +143,7 @@ struct FilePaneView: View {
                     .onChange(of: model.path) { _ in scrollToLast(proxy) }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .hoverTip(loc(.double_click_path))
+                .hoverTipText(loc(.double_click_path))
             }
 
             // Toggles between breadcrumb and path-entry; the icon reflects what a
@@ -153,7 +153,7 @@ struct FilePaneView: View {
                     .font(.system(size: 11))
             }
             .buttonStyle(.plain)
-            .hoverTip(pathEditing ? loc(.show_breadcrumb) : loc(.type_path))
+            .hoverTipText(pathEditing ? loc(.show_breadcrumb) : loc(.type_path))
         }
         .padding(.horizontal, 7).padding(.vertical, 3)
         .frame(maxWidth: .infinity)
@@ -237,7 +237,7 @@ struct FilePaneView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .hoverTip(String(format: loc(.sort_by), title))
+        .hoverTipText(String(format: loc(.sort_by), title))
     }
 
     // MARK: List
@@ -277,7 +277,7 @@ struct FilePaneView: View {
         .padding(.horizontal, 12).padding(.vertical, 6)
         .contentShape(Rectangle())
         .onTapGesture(count: 2) { onAction(.goUp) }
-        .hoverTip(loc(.parent_folder))
+        .hoverTipText(loc(.parent_folder))
     }
 
     /// File name with the current search term highlighted for visibility.
@@ -518,11 +518,14 @@ struct FileHostChooser: View {
 // MARK: - ConflictDialog
 
 /// "File already exists" conflict prompt (Stop / Skip / Replace / Duplicate / Merge).
+/// `showApplyToAll` adds an "apply to all remaining" checkbox for batch uploads.
 struct ConflictDialog: View {
     let name: String
-    let onResolve: (ConflictResolution) -> Void
+    var showApplyToAll: Bool = false
+    let onResolve: (ConflictResolution, Bool) -> Void
 
     @ObservedObject private var lang = AppLanguageSettings.shared
+    @State private var applyToAll = false
 
     var body: some View {
         ZStack {
@@ -531,13 +534,18 @@ struct ConflictDialog: View {
                 Text(loc(.file_already_exists)).font(.title3.weight(.semibold))
                 Text(String(format: loc(.file_already_exists_detail), name))
                     .foregroundStyle(.secondaryText)
+                if showApplyToAll {
+                    Toggle("Apply to all remaining files", isOn: $applyToAll)
+                        .toggleStyle(.checkbox)
+                        .font(.system(size: 12))
+                }
                 HStack(spacing: 10) {
-                    Button(loc(.stop), role: .destructive) { onResolve(.stop) }
+                    Button(loc(.stop), role: .destructive) { onResolve(.stop, applyToAll) }
                         .buttonStyle(.borderedProminent).tint(.red)
-                    Button(loc(.skip)) { onResolve(.skip) }.buttonStyle(.plain)
-                    Button(loc(.replace)) { onResolve(.replace) }
-                    Button(loc(.duplicate)) { onResolve(.duplicate) }.buttonStyle(.borderedProminent)
-                    Button(loc(.merge)) { onResolve(.merge) }
+                    Button(loc(.skip)) { onResolve(.skip, applyToAll) }.buttonStyle(.plain)
+                    Button(loc(.replace)) { onResolve(.replace, applyToAll) }
+                    Button(loc(.duplicate)) { onResolve(.duplicate, applyToAll) }.buttonStyle(.borderedProminent)
+                    Button(loc(.merge)) { onResolve(.merge, applyToAll) }
                 }
             }
             .padding(24)

@@ -21,6 +21,10 @@ struct VaultsTabStrip: View {
     @State private var renameText: String = ""
     /// A dragged pane is hovering the strip's empty trailing area.
     @State private var stripDropTargeted = false
+    /// Measured chip-row width (content) vs ScrollView viewport; the scroll
+    /// arrows show only when the content actually overflows.
+    @State private var tabContentWidth: CGFloat = 0
+    @State private var tabViewportWidth: CGFloat = 0
 
     private var dashboardActive: Bool {
         tabs.selection == .dashboard
@@ -34,6 +38,8 @@ struct VaultsTabStrip: View {
             navSegment
             divider
             // Only the terminal tabs scroll horizontally when they overflow.
+            // Left/right arrow buttons appear when tabs overflow for Mos
+            // compatibility (Shift+scroll won't work with Mos intercepting).
             ScrollViewReader { proxy in
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
@@ -50,8 +56,24 @@ struct VaultsTabStrip: View {
                         }
                     }
                     .padding(.vertical, 2)
+                    .background(
+                        // Content width = sum of all chips (unclipped).
+                        GeometryReader { geo in
+                            Color.clear
+                                .onAppear { tabContentWidth = geo.size.width }
+                                .onChange(of: geo.size.width) { tabContentWidth = $0 }
+                        }
+                    )
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    // Viewport width = the ScrollView's own layout size.
+                    GeometryReader { geo in
+                        Color.clear
+                            .onAppear { tabViewportWidth = geo.size.width }
+                            .onChange(of: geo.size.width) { tabViewportWidth = $0 }
+                    }
+                )
                 // Bring the active tab into view — e.g. a newly created tab at
                 // the end, or one selected via ⌘-number.
                 .onChange(of: tabs.selection) { newValue in
@@ -71,7 +93,13 @@ struct VaultsTabStrip: View {
                     targetID: nil,
                     dropTargeted: $stripDropTargeted))
             }
-            // The "+" stays pinned on the right of the scroll area.
+            // The "<" ">" scroll buttons + "+" stay pinned on the right.
+            // Shown only when the chips genuinely overflow the viewport
+            // (measured, not a tab-count heuristic — many narrow tabs overflow
+            // while three wide tabs don't).
+            if tabContentWidth > tabViewportWidth + 1 {
+                tabScrollButtons
+            }
             newTabButton
         }
         .padding(.leading, 8)
@@ -341,7 +369,32 @@ struct VaultsTabStrip: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .hoverTip("New terminal tab")
+        .hoverTipText("New terminal tab")
+    }
+
+    /// Left/right arrow buttons to cycle through tabs when they overflow.
+    private var tabScrollButtons: some View {
+        HStack(spacing: 2) {
+            Button { tabs.cycleTab(-1) } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondaryText)
+                    .frame(width: 20, height: 20)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Previous tab")
+
+            Button { tabs.cycleTab(1) } label: {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondaryText)
+                    .frame(width: 20, height: 20)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Next tab")
+        }
     }
 }
 

@@ -82,11 +82,10 @@ template $GhosttyWindow: Adw.ApplicationWindow {
       }
 
       [top]
-      Adw.TabBar tab_bar {
-        autohide: bind template.tabs-autohide;
-        expand-tabs: bind template.tabs-wide;
-        view: tab_view;
+      $GhosttyTabBar tab_bar {
         visible: bind template.tabs-visible;
+        arrow-left-clicked => $arrow_left_clicked();
+        arrow-right-clicked => $arrow_right_clicked();
 
         [start]
         Gtk.Box {

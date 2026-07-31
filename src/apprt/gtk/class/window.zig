@@ -28,6 +28,7 @@ const Surface = @import("surface.zig").Surface;
 const Tab = @import("tab.zig").Tab;
 const DebugWarning = @import("debug_warning.zig").DebugWarning;
 const CommandPalette = @import("command_palette.zig").CommandPalette;
+const GhosttyTabBar = @import("ghostty_tab_bar.zig").GhosttyTabBar;
 const WeakRef = @import("../weak_ref.zig").WeakRef;
 
 const log = std.log.scoped(.gtk_ghostty_window);
@@ -261,7 +262,7 @@ pub const Window = extern struct {
 
         // Template bindings
         tab_overview: *adw.TabOverview,
-        tab_bar: *adw.TabBar,
+        tab_bar: *GhosttyTabBar,
         tab_view: *adw.TabView,
         toolbar: *adw.ToolbarView,
         toast_overlay: *adw.ToastOverlay,
@@ -469,6 +470,9 @@ pub const Window = extern struct {
         // Add the page and select it
         const page = tab_view.insert(tab.as(gtk.Widget), position);
         tab_view.setSelectedPage(page);
+
+        // Connect the custom tab bar to the TabView
+        priv.tab_bar.setTabView(tab_view);
 
         // Create some property bindings
         _ = tab.as(gobject.Object).bindProperty(
@@ -695,13 +699,6 @@ pub const Window = extern struct {
             !gtk_version.atLeast(4, 16, 0) and
                 config.@"window-theme" == .ghostty,
         );
-
-        // Move the tab bar to the proper location.
-        priv.toolbar.remove(priv.tab_bar.as(gtk.Widget));
-        switch (config.@"gtk-tabs-location") {
-            .top => priv.toolbar.addTopBar(priv.tab_bar.as(gtk.Widget)),
-            .bottom => priv.toolbar.addBottomBar(priv.tab_bar.as(gtk.Widget)),
-        }
 
         // Do our window-protocol specific appearance sync.
         priv.winproto.syncAppearance() catch |err| {
@@ -1675,6 +1672,17 @@ pub const Window = extern struct {
 
             self.as(gtk.Window).close();
         }
+    }
+
+    /// Arrow button callbacks for custom tab bar
+    fn arrowLeftClicked(self: *Self) callconv(.c) void {
+        const priv = self.private();
+        priv.tab_view.selectPreviousPage();
+    }
+
+    fn arrowRightClicked(self: *Self) callconv(.c) void {
+        const priv = self.private();
+        priv.tab_view.selectNextPage();
     }
     fn setupTabMenu(
         _: *adw.TabView,

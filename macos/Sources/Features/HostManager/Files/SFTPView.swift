@@ -21,6 +21,7 @@ struct TransferState: Equatable {
     var bytesPerSecond: Double
     var direct: Bool          // true = server→server direct; false = via this Mac
     var status: Status = .inProgress
+    var startTime: Date
 }
 
 @MainActor
@@ -149,7 +150,7 @@ struct SFTPView: View {
             pendingDelete = nil
         }
         .overlay {
-            if let c = conflict { ConflictDialog(name: c.item.name) { resolve(c, $0) } }
+            if let c = conflict { ConflictDialog(name: c.item.name) { r, _ in resolve(c, r) } }
         }
     }
 
@@ -305,19 +306,13 @@ struct SFTPView: View {
         let destPath = destBackend.join(destDir, FileTransfer.finalName(for: item, resolution: resolution))
         let total = item.isDirectory ? 0 : item.size
         let state = TransferState(fileName: item.name, total: total, transferred: 0,
-                                  bytesPerSecond: 0, direct: direct)
+                                  bytesPerSecond: 0, direct: direct, startTime: Date())
         session.transfers.append(state)
-        let start = Date()
-        let poller = Task { @MainActor in
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 800_000_000)
-                if Task.isCancelled { break }
-                guard let idx = session.transfers.lastIndex(where: { $0.status == .inProgress }) else { break }
-                let size = await destBackend.fileSize(destPath) ?? session.transfers[idx].transferred
-                let elapsed = max(0.001, Date().timeIntervalSince(start))
-                session.transfers[idx].transferred = size
-                session.transfers[idx].bytesPerSecond = Double(size) / elapsed
-            }
+        let poller = TransferProgressPoller.start(destBackend: destBackend, destPath: destPath) { size, elapsed in
+            guard let idx = session.transfers.lastIndex(where: { $0.status == .inProgress }) else { return false }
+            session.transfers[idx].transferred = size ?? session.transfers[idx].transferred
+            session.transfers[idx].bytesPerSecond = Double(session.transfers[idx].transferred) / elapsed
+            return true
         }
         do {
             try await op()
@@ -370,6 +365,20 @@ private struct TransferRow: View {
     let onCancel: () -> Void
     let onDelete: () -> Void
 
+    private func formatElapsed(_ seconds: TimeInterval) -> String {
+        if seconds < 60 {
+            return String(format: "%.1fs", seconds)
+        } else if seconds < 3600 {
+            let m = Int(seconds) / 60
+            let s = Int(seconds) % 60
+            return String(format: "%dm%02ds", m, s)
+        } else {
+            let h = Int(seconds) / 3600
+            let m = (Int(seconds) % 3600) / 60
+            return String(format: "%dh%02dm", h, m)
+        }
+    }
+
     var body: some View {
         let fraction = state.total > 0
             ? min(1, Double(state.transferred) / Double(state.total))
@@ -391,9 +400,16 @@ private struct TransferRow: View {
                     ProgressView(value: fraction)
                         .progressViewStyle(.linear)
                         .frame(width: 80)
+                        .hoverTip {
+                            String(format: "%.1f%%", fraction * 100) + " · " + formatElapsed(Date().timeIntervalSince(state.startTime))
+                        }
                 } else {
-                    ProgressView().scaleEffect(x: 0.8, y: 0.5, anchor: .leading)
+                    ProgressView()
+                        .scaleEffect(x: 0.8, y: 0.5, anchor: .leading)
                         .frame(width: 60)
+                        .hoverTip {
+                            formatElapsed(Date().timeIntervalSince(state.startTime))
+                        }
                 }
             case .completed:
                 Text("Done").font(.caption2).foregroundStyle(.green)
@@ -424,11 +440,13 @@ private struct TransferRow: View {
             // Action
             switch state.status {
             case .inProgress:
-                Button("Cancel", action: onCancel)
-                    .controlSize(.small)
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.red)
-                    .font(.caption)
+                Button(action: onCancel) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.caption)
+                }
+                .controlSize(.small)
+                .buttonStyle(.plain)
+                .foregroundStyle(.red)
             case .completed, .failed, .cancelled:
                 Button(action: onDelete) {
                     Image(systemName: "xmark.circle.fill")

@@ -169,7 +169,7 @@ struct SFTPWindowView: View {
         }
         .overlay {
             if let c = conflict {
-                ConflictDialog(name: c.item.name) { resolve(c, $0) }
+                ConflictDialog(name: c.item.name) { r, _ in resolve(c, r) }
             }
         }
         .overlay {

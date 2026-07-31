@@ -130,19 +130,23 @@ pub fn CircBuf(comptime T: type, comptime default: T) type {
         }
 
         /// Get the first (oldest) value in the buffer.
+        /// This is a fast path that avoids iterator allocation.
         pub fn first(self: Self) ?*T {
-            // Note: this can be more efficient by not using the
-            // iterator, but this was an easy way to implement it.
-            var it = self.iterator(.forward);
-            return it.next();
+            if (self.len() == 0) return null;
+            return &self.storage[self.tail];
         }
 
         /// Get the last (newest) value in the buffer.
+        /// This is a fast path that avoids iterator allocation.
         pub fn last(self: Self) ?*T {
-            // Note: this can be more efficient by not using the
-            // iterator, but this was an easy way to implement it.
-            var it = self.iterator(.reverse);
-            return it.next();
+            const count = self.len();
+            if (count == 0) return null;
+            // The last element is at (tail + count - 1) % capacity
+            const offset = count - 1;
+            if (self.tail + offset < self.storage.len) {
+                return &self.storage[self.tail + offset];
+            }
+            return &self.storage[self.tail + offset - self.storage.len];
         }
 
         /// Ensures that there is enough capacity to store amount more
@@ -301,11 +305,11 @@ pub fn CircBuf(comptime T: type, comptime default: T) type {
         fn storageOffset(self: Self, offset: usize) usize {
             assert(offset < self.storage.len);
 
-            // This should be subtraction ideally to avoid overflows but
-            // it would take a really, really, huge buffer to overflow.
-            const fits_offset = self.tail + offset;
-            if (fits_offset < self.storage.len) return fits_offset;
-            return fits_offset - self.storage.len;
+            // Use wrappingAdd to avoid undefined behavior from integer overflow.
+            // A normal addition would overflow on very large buffers.
+            const wrapped_tail = self.tail +% offset;
+            if (wrapped_tail < self.storage.len) return wrapped_tail;
+            return wrapped_tail -% self.storage.len;
         }
     };
 }

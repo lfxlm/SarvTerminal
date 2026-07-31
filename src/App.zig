@@ -19,12 +19,16 @@ const font = @import("font/main.zig");
 const log = std.log.scoped(.app);
 
 const SurfaceList = std.ArrayListUnmanaged(*apprt.Surface);
+const SurfaceMap = std.AutoHashMapUnmanaged(u64, *Surface);
 
 /// General purpose allocator
 alloc: Allocator,
 
 /// The list of surfaces that are currently active.
 surfaces: SurfaceList,
+
+/// Hash map from surface ID to core Surface pointer for O(1) lookups.
+surface_map: SurfaceMap,
 
 /// This is true if the app that Ghostty is in is focused. This may
 /// mean that no surfaces (terminals) are focused but the app is still
@@ -96,6 +100,7 @@ pub fn init(
     self.* = .{
         .alloc = alloc,
         .surfaces = .{},
+        .surface_map = .{},
         .mailbox = .{},
         .font_grid_set = font_grid_set,
         .config_conditional_state = .{},
@@ -106,6 +111,7 @@ pub fn deinit(self: *App) void {
     // Clean up all our surfaces
     for (self.surfaces.items) |surface| surface.deinit();
     self.surfaces.deinit(self.alloc);
+    self.surface_map.deinit(self.alloc);
 
     // Clean up our font group cache
     // We should have zero items in the grid set at this point because
@@ -170,6 +176,9 @@ pub fn addSurface(
 ) Allocator.Error!void {
     try self.surfaces.append(self.alloc, rt_surface);
 
+    // Insert into the hash map for O(1) lookups.
+    try self.surface_map.put(self.alloc, rt_surface.core().id, rt_surface.core());
+
     // Since we have non-zero surfaces, we can cancel the quit timer.
     // It is up to the apprt if there is a quit timer at all and if it
     // should be canceled.
@@ -194,6 +203,9 @@ pub fn deleteSurface(self: *App, rt_surface: *apprt.Surface) void {
             self.focused_surface = null;
         }
     }
+
+    // Remove from the hash map for O(1) cleanup.
+    _ = self.surface_map.remove(rt_surface.core().id);
 
     var i: usize = 0;
     while (i < self.surfaces.items.len) {
@@ -498,21 +510,12 @@ fn surfaceMessage(self: *App, surface: *Surface, msg: apprt.surface.Message) !vo
 }
 
 fn hasSurface(self: *const App, surface: *const Surface) bool {
-    for (self.surfaces.items) |v| {
-        if (v.core() == surface) return true;
-    }
-
-    return false;
+    return self.surface_map.contains(surface.id);
 }
 
 /// Search for a surface by a 64 bit unique ID.
 pub fn findSurfaceByID(self: *const App, id: u64) ?*Surface {
-    for (self.surfaces.items) |v| {
-        const surface: *Surface = v.core();
-        if (surface.id == id) return surface;
-    }
-
-    return null;
+    return self.surface_map.get(id);
 }
 
 fn hasRtSurface(self: *const App, surface: *apprt.Surface) bool {

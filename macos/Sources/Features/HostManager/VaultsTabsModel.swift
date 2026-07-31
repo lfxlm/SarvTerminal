@@ -1813,7 +1813,7 @@ final class VaultsTabsModel: ObservableObject {
             title: title,
             message: message,
             buttons: [
-                .init("Close", isDestructive: true),
+                .init("Close", isDefault: true, isDestructive: true),
                 .init("Cancel", isCancel: true),
             ]
         ) { result in

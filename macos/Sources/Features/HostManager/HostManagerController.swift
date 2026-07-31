@@ -33,7 +33,7 @@ struct VaultsBellView: View {
                 }
         }
         .buttonStyle(.plain)
-        .hoverTip("Notifications")
+        .hoverTipText("Notifications")
         .popover(isPresented: $showInbox, arrowEdge: .bottom) {
             NotificationsInboxView { showInbox = false }
         }

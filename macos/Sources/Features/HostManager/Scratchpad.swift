@@ -95,10 +95,10 @@ struct ScratchpadPanel: View {
             } label: {
                 Text(CodeLang.label(for: store.language)).font(.system(size: 12))
             }
-            .menuStyle(.borderlessButton).fixedSize().hoverTip("Syntax highlighting")
+            .menuStyle(.borderlessButton).fixedSize().hoverTipText("Syntax highlighting")
 
             Button { onClose() } label: { Image(systemName: "xmark") }
-                .buttonStyle(.plain).hoverTip("Close scratchpad")
+                .buttonStyle(.plain).hoverTipText("Close scratchpad")
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
         .background(Color(NSColor.windowBackgroundColor))
@@ -111,14 +111,14 @@ struct ScratchpadPanel: View {
                     Label("Send", systemImage: "text.insert")
                 }
                 .controlSize(.small).disabled(!canSend)
-                .hoverTip("Paste into the active terminal (no Enter)")
+                .hoverTipText("Paste into the active terminal (no Enter)")
 
                 Button { _ = tabs.runInTargetTerminal(store.text) } label: {
                     Label("Run", systemImage: "return")
                 }
                 .controlSize(.small).buttonStyle(.borderedProminent)
                 .disabled(!canSend)
-                .hoverTip("Send to the active terminal and run (⌘↵)")
+                .hoverTipText("Send to the active terminal and run (⌘↵)")
 
                 Spacer()
 
@@ -131,7 +131,7 @@ struct ScratchpadPanel: View {
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
-                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().hoverTip("More")
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().hoverTipText("More")
             }
 
             if !hasTerminal {

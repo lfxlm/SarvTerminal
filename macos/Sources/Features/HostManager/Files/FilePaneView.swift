@@ -444,20 +444,25 @@ struct FilePaneView: View {
             Divider()
             Button(loc(.refresh)) { onAction(.refresh) }
             Button(loc(.new_folder)) { onAction(.newFolder) }
-            Button(loc(.edit_permissions)) { onAction(.editPermissions(item)) }
+            if model.backend.supportsPermissions {
+                Button(loc(.edit_permissions)) { onAction(.editPermissions(item)) }
+            }
         }
     }
 }
 
 // MARK: - FileHostChooser
 
-/// Termius-style host chooser: pick Local or a saved host for a pane.
+/// Termius-style host chooser: pick Local, a saved host, or a saved SMB
+/// connection for a pane.
 struct FileHostChooser: View {
     let onPick: (FileLocation) -> Void
     let onCancel: () -> Void
 
     @ObservedObject private var store = SavedHostsStore.shared
+    @ObservedObject private var smbStore = SMBConnectionStore.shared
     @State private var search = ""
+    @State private var showNewSMBSheet = false
     @ObservedObject private var lang = AppLanguageSettings.shared
 
     private var hosts: [SavedHost] {
@@ -465,6 +470,14 @@ struct FileHostChooser: View {
         guard !q.isEmpty else { return store.hosts }
         return store.hosts.filter {
             $0.displayLabel.lowercased().contains(q) || $0.hostname.lowercased().contains(q)
+        }
+    }
+
+    private var smbConnections: [SMBConnection] {
+        let q = search.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !q.isEmpty else { return smbStore.connections }
+        return smbStore.connections.filter {
+            $0.displayTitle.lowercased().contains(q) || $0.server.lowercased().contains(q)
         }
     }
 
@@ -477,6 +490,10 @@ struct FileHostChooser: View {
                     Label(loc(.local), systemImage: "desktopcomputer")
                 }
                 .buttonStyle(.borderedProminent)
+                Button { showNewSMBSheet = true } label: {
+                    Label(loc(.smb_connect), systemImage: "externaldrive.fill.badge.wifi")
+                }
+                .buttonStyle(.bordered)
                 Button(loc(.cancel)) { onCancel() }
             }
             .padding(14)
@@ -489,7 +506,7 @@ struct FileHostChooser: View {
             Divider()
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 2) {
-                    if hosts.isEmpty {
+                    if hosts.isEmpty && smbConnections.isEmpty {
                         Text(loc(.no_saved_hosts)).foregroundStyle(.secondaryText).padding(20)
                     }
                     ForEach(hosts) { host in
@@ -507,11 +524,67 @@ struct FileHostChooser: View {
                         }
                         .buttonStyle(.plain)
                     }
+                    if !smbConnections.isEmpty {
+                        Text(loc(.smb_connections))
+                            .font(.caption).fontWeight(.semibold)
+                            .foregroundStyle(.secondaryText)
+                            .padding(.horizontal, 12).padding(.top, 14).padding(.bottom, 4)
+                        ForEach(smbConnections) { conn in
+                            HStack(spacing: 0) {
+                                Button { onPick(.smb(conn)) } label: {
+                                    HStack(spacing: 10) {
+                                        Image(systemName: "externaldrive.fill.badge.wifi")
+                                            .foregroundStyle(.secondaryText).frame(width: 18)
+                                        VStack(alignment: .leading, spacing: 1) {
+                                            Text(conn.displayTitle).fontWeight(.medium)
+                                            Text(conn.subtitle).font(.caption).foregroundStyle(.secondaryText)
+                                        }
+                                        Spacer()
+                                    }
+                                    .padding(.horizontal, 12).padding(.vertical, 8)
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                Button {
+                                    SarvAlert.present(
+                                        title: conn.displayTitle,
+                                        message: loc(.smb_delete_confirm),
+                                        buttons: [
+                                            .init(loc(.cancel), isCancel: true),
+                                            .init(loc(.delete), isDestructive: true),
+                                        ]
+                                    ) { result in
+                                        if result.buttonIndex == 1 {
+                                            smbStore.delete(conn)
+                                        }
+                                    }
+                                } label: {
+                                    Image(systemName: "trash")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(.secondaryText)
+                                        .padding(6)
+                                }
+                                .buttonStyle(.plain)
+                                .help(loc(.delete))
+                            }
+                        }
+                    }
                 }
                 .padding(8)
             }
         }
         .frame(width: 460, height: 420)
+        .sheet(isPresented: $showNewSMBSheet) {
+            SMBConnectionFormView(
+                connection: nil,
+                onCancel: { showNewSMBSheet = false },
+                onSave: { conn in
+                    smbStore.upsert(conn)
+                    showNewSMBSheet = false
+                    onPick(.smb(conn))
+                }
+            )
+        }
     }
 }
 

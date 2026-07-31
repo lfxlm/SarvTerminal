@@ -46,15 +46,23 @@ enum FileTransfer {
         else { return }
 
         switch (source, dest) {
-        case let (s as LocalFileBackend, d as LocalFileBackend):
-            _ = s; _ = d
+        // SMB shares are mounted locally — a local/smb pair is a plain file
+        // copy. (`is` patterns because one case list can't bind the same name
+        // to two different backend types.)
+        case (is LocalFileBackend, is LocalFileBackend),
+             (is SMBFileBackend, is LocalFileBackend),
+             (is LocalFileBackend, is SMBFileBackend),
+             (is SMBFileBackend, is SMBFileBackend):
             try FileManager.default.copyItem(atPath: item.path, toPath: destPath)
 
-        // Local ⇄ remote → SFTP (put / get).
-        case let (_ as LocalFileBackend, d as RemoteFileBackend):
+        // Local/SMB ⇄ remote → SFTP (put / get). The SMB path is a local
+        // mount, so it plays the "local" side of the transfer.
+        case (is LocalFileBackend, let d as RemoteFileBackend),
+             (is SMBFileBackend, let d as RemoteFileBackend):
             try await sftp(localPath: item.path, isDir: item.isDirectory,
                            remote: d, remotePath: destPath, upload: true)
-        case let (s as RemoteFileBackend, _ as LocalFileBackend):
+        case (let s as RemoteFileBackend, is LocalFileBackend),
+             (let s as RemoteFileBackend, is SMBFileBackend):
             try await sftp(localPath: destPath, isDir: item.isDirectory,
                            remote: s, remotePath: item.path, upload: false)
 

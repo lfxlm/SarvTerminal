@@ -39,11 +39,20 @@ final class SFTPTabGroup: ObservableObject {
     /// neighbour (or last remaining tab) becomes active.
     func closeTab(at index: Int) {
         guard tabs.indices.contains(index) else { return }
+        // Release backend-held resources (SMB mounts) before dropping the tab.
+        tabs[index].browser.disconnect()
         tabs.remove(at: index)
         if tabs.isEmpty {
             activeIndex = 0
         } else if activeIndex >= tabs.count {
             activeIndex = tabs.count - 1
+        }
+    }
+
+    /// Best-effort cleanup of every tab (window disappearing / app quit).
+    func disconnectAll() {
+        for tab in tabs {
+            tab.browser.disconnect()
         }
     }
 }

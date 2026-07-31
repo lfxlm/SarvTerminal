@@ -608,6 +608,7 @@ enum LocalizedKey: String, CaseIterable {
     case v_snippets
     case v_known_hosts
     case v_logs
+    case v_smb
     case h_view_grid
     case h_view_list
     case h_sort_az
@@ -618,6 +619,28 @@ enum LocalizedKey: String, CaseIterable {
     // ── Vaults / Host Manager — Dashboard ──────
     case h_quick_connect_placeholder
     case h_clear_help
+
+    // ── SMB Connections ─────────────────────────
+    case smb_connection
+    case smb_connections
+    case smb_new_connection
+    case smb_connect
+    case smb_server
+    case smb_share
+    case smb_username
+    case smb_password
+    case smb_domain
+    case smb_label
+    case smb_save_and_connect
+    case smb_no_permissions
+    case smb_mount_failed
+    case smb_delete_confirm
+    case smb_no_connections
+    case smb_edit_title
+    case smb_domain_optional
+    case smb_label_optional
+    case smb_password_placeholder
+    case sftp_close_tab_confirm
     case h_connect_button
     case h_connect_as_ssh
     case h_connect_typing
@@ -1259,12 +1282,33 @@ private let enStrings: [LocalizedKey: String] = [
     // ── Vaults / Host Manager ──────────────────
     .v_hosts: "Hosts",
     .v_saved_sessions: "Saved Sessions",
+    .v_smb: "SMB",
     .v_teams: "Teams",
     .v_keychain: "Keychain",
     .v_port_forwarding: "Port Forwarding",
     .v_snippets: "Snippets",
     .v_known_hosts: "Known Hosts",
     .v_logs: "Logs",
+    .smb_connection: "SMB Connection",
+    .smb_connections: "SMB Connections",
+    .smb_new_connection: "New SMB Connection…",
+    .smb_connect: "Connect SMB…",
+    .smb_server: "Server",
+    .smb_share: "Share",
+    .smb_username: "Username",
+    .smb_password: "Password",
+    .smb_domain: "Domain",
+    .smb_label: "Label",
+    .smb_save_and_connect: "Save & Connect",
+    .smb_no_permissions: "SMB shares do not support changing permissions.",
+    .smb_mount_failed: "Failed to connect to SMB share: %@",
+    .smb_delete_confirm: "Delete this SMB connection?",
+    .smb_no_connections: "No saved SMB connections",
+    .smb_edit_title: "Edit SMB Connection",
+    .smb_domain_optional: "Optional — leave empty for workgroup default",
+    .smb_label_optional: "Optional display name",
+    .smb_password_placeholder: "Password (stored encrypted)",
+    .sftp_close_tab_confirm: "Closing this tab disconnects the connection. Continue?",
     .h_view_grid: "Grid",
     .h_view_list: "List",
     .h_sort_az: "A–Z",
@@ -1903,12 +1947,33 @@ private let zhStrings: [LocalizedKey: String] = [
     // ── Vaults / Host Manager ──────────────────
     .v_hosts: "主机",
     .v_saved_sessions: "已保存的会话",
+    .v_smb: "SMB",
     .v_teams: "团队",
     .v_keychain: "钥匙串",
     .v_port_forwarding: "端口转发",
     .v_snippets: "代码片段",
     .v_known_hosts: "已知主机",
     .v_logs: "日志",
+    .smb_connection: "SMB 连接",
+    .smb_connections: "SMB 连接",
+    .smb_new_connection: "新建 SMB 连接…",
+    .smb_connect: "连接 SMB…",
+    .smb_server: "服务器",
+    .smb_share: "共享",
+    .smb_username: "用户名",
+    .smb_password: "密码",
+    .smb_domain: "域",
+    .smb_label: "标签",
+    .smb_save_and_connect: "保存并连接",
+    .smb_no_permissions: "SMB 共享不支持修改权限。",
+    .smb_mount_failed: "SMB 共享连接失败：%@",
+    .smb_delete_confirm: "删除此 SMB 连接？",
+    .smb_no_connections: "暂无已保存的 SMB 连接",
+    .smb_edit_title: "编辑 SMB 连接",
+    .smb_domain_optional: "可选 — 留空使用工作组默认值",
+    .smb_label_optional: "可选显示名称",
+    .smb_password_placeholder: "密码（加密存储）",
+    .sftp_close_tab_confirm: "关闭此标签页将断开连接，是否继续？",
     .h_view_grid: "网格",
     .h_view_list: "列表",
     .h_sort_az: "A–Z",

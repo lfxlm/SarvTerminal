@@ -13,7 +13,7 @@ import AppKit
 /// - Logs — session logs (later)
 struct VaultsView: View {
     enum Section: Hashable, CaseIterable, Identifiable {
-        case hosts, savedSessions, teams, keychain, portForwarding, snippets, knownHosts, logs
+        case hosts, savedSessions, teams, keychain, portForwarding, snippets, knownHosts, logs, smb
         var id: Self { self }
         var label: String {
             switch self {
@@ -25,6 +25,7 @@ struct VaultsView: View {
             case .snippets: return loc(.v_snippets)
             case .knownHosts: return loc(.v_known_hosts)
             case .logs: return loc(.v_logs)
+            case .smb: return loc(.v_smb)
             }
         }
         var icon: String {
@@ -37,6 +38,7 @@ struct VaultsView: View {
             case .snippets: return "curlybraces"
             case .knownHosts: return "checkmark.shield"
             case .logs: return "clock"
+            case .smb: return "externaldrive.fill.badge.wifi"
             }
         }
     }
@@ -67,6 +69,7 @@ struct VaultsView: View {
                 case .snippets:       SnippetsSectionView()
                 case .knownHosts:     KnownHostsSectionView()
                 case .logs:           LogsSectionView()
+                case .smb:            SMBConnectionsSectionView()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

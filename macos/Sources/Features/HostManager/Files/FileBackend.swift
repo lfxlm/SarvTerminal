@@ -26,9 +26,17 @@ protocol FileBackend {
     /// Current size of a file in bytes (nil if missing) — polled to drive
     /// transfer progress against the known source size.
     func fileSize(_ path: String) async -> Int64?
+    /// Release any backend-held resources (e.g. an SMB mount). Best effort;
+    /// called when a tab closes or the window goes away.
+    func disconnect()
+    /// Whether the backend supports POSIX permission editing (SMB does not).
+    var supportsPermissions: Bool { get }
 }
 
 extension FileBackend {
+    func disconnect() {}
+    var supportsPermissions: Bool { true }
+
     /// Join a directory and a child name with a single "/".
     func join(_ dir: String, _ name: String) -> String {
         if dir == "/" { return "/" + name }

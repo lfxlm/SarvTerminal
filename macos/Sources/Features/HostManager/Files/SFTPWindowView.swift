@@ -89,6 +89,11 @@ struct SFTPWindowView: View {
                 rightTabs.newTab(location: .host(host))
             }
         }
+        .onDisappear {
+            // Unmount any SMB shares opened in this window.
+            leftTabs.disconnectAll()
+            rightTabs.disconnectAll()
+        }
         // Dialogs
         .sheet(item: $hostPickerSide) { side in
             FileHostChooser { location in
@@ -183,6 +188,28 @@ struct SFTPWindowView: View {
 
     // MARK: - Pane tab bar
 
+    /// Close a tab, confirming first when it holds a connection (SSH host or
+    /// SMB share): closing disconnects it, and for SMB unmounts the share —
+    /// possibly mid-transfer. Local tabs close without asking.
+    private func confirmCloseTab(tab: SFTPTab, in group: SFTPTabGroup, at index: Int) {
+        guard !tab.browser.location.isLocal else {
+            group.closeTab(at: index)
+            return
+        }
+        SarvAlert.present(
+            title: tab.title,
+            message: loc(.sftp_close_tab_confirm),
+            buttons: [
+                .init(loc(.cancel), isCancel: true),
+                .init(loc(.close), isDestructive: true),
+            ]
+        ) { result in
+            if result.buttonIndex == 1 {
+                group.closeTab(at: index)
+            }
+        }
+    }
+
     private func paneTabBar(side: Side, group: SFTPTabGroup) -> some View {
         HStack(spacing: 2) {
             ScrollView(.horizontal, showsIndicators: false) {
@@ -191,7 +218,7 @@ struct SFTPWindowView: View {
                         tabPill(tab: tab, isActive: idx == group.activeIndex) {
                             group.activeIndex = idx
                         } onClose: {
-                            group.closeTab(at: idx)
+                            confirmCloseTab(tab: tab, in: group, at: idx)
                         }
                     }
                 }

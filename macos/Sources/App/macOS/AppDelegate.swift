@@ -561,6 +561,10 @@ class AppDelegate: NSObject,
         // (picks up renames the per-change autosave may have missed).
         VaultsTabsModel.shared.persistSession()
 
+        // Unmount any SMB shares still mounted (e.g. a window closed without
+        // its onDisappear firing during quit). Best effort.
+        SMBFileBackend.cleanupAllMounts()
+
         // We have no notifications we want to persist after death,
         // so remove them all now. In the future we may want to be
         // more selective and only remove surface-targeted notifications.

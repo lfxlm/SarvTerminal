@@ -104,11 +104,18 @@ final class SFTPBrowserModel: ObservableObject {
         switch location {
         case .local: backend = LocalFileBackend()
         case .host(let h): backend = RemoteFileBackend(host: h)
+        case .smb(let c): backend = SMBFileBackend(connection: c)
         }
         selectedIDs.removeAll(keepingCapacity: false)
         history = []
         historyIndex = -1
         Task { await loadHome() }
+    }
+
+    /// Release backend-held resources (e.g. an SMB mount). Called when the
+    /// tab closes or the window goes away.
+    func disconnect() {
+        backend.disconnect()
     }
 
     func loadHome() async {

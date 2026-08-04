@@ -33,6 +33,7 @@ records the final working logic — not intermediate churn. See `AGENTS.md`
 | 4 | `8f2a0952d` | `feat(vaults): confirm before closing a tab or pane with a running process` |
 | 5 | `bdcbe43a7` | `refactor(vaults): make bare tab/pane closers private so the close confirmation can't be bypassed` |
 | 6 | `4ea99a3` | `feat(sftp): real transfer cancellation, failed-transfer retry & cancel-all; delete-failure feedback, copy/download conflict dialogs, dirty-close confirm; connect spinner + password retry focus; ⌘F host search` |
+| 7 | `dbd60c5` | `feat(vaults): broadcast input warning pill with one-click exit; data-load-failure banners for data-backed sections; SFTP empty-folder state + loading overlay` |
 
 ---
 

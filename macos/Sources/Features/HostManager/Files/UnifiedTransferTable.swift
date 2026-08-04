@@ -73,13 +73,12 @@ struct UnifiedTransferTable: View {
                 // Rows — fills remaining space and scrolls when overflow.
                 ScrollView(.vertical, showsIndicators: true) {
                     LazyVStack(spacing: 0) {
-                        ForEach(Array(manager.transfers.enumerated().reversed()),
-                                id: \.element.id) { idx, record in
+                        ForEach(manager.transfers.reversed(), id: \.id) { record in
                             TransferRecordRow(
                                 record: record,
                                 byteString: byteString,
-                                onCancel: { manager.cancelTransfer() },
-                                onDelete: { manager.transfers.remove(at: idx) }
+                                onCancel: { manager.cancelTransfer(id: record.id) },
+                                onDelete: { manager.transfers.removeAll { $0.id == record.id } }
                             )
                             Divider().opacity(0.4)
                         }

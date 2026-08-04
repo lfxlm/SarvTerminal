@@ -6,6 +6,10 @@ struct GeneralSectionView: View {
     @AppStorage("SarvNewTabDirectory") private var newTabDirectory = ""
     @AppStorage(HostConnectClickMode.storageKey)
     private var hostsConnectClick: HostConnectClickMode = .double
+    @AppStorage(FileLinkEditor.storageKey)
+    private var fileLinkEditor: FileLinkEditor = .systemDefault
+    @AppStorage(FileLinkEditor.customTemplateKey)
+    private var fileLinkTemplate = ""
 
     @ObservedObject private var langSettings = AppLanguageSettings.shared
 
@@ -156,6 +160,28 @@ struct GeneralSectionView: View {
                 Toggle(loc(.g_detect_urls),
                        isOn: $viewModel.general.linkURL)
                     .toggleStyle(.checkbox)
+            }
+            divider
+            row(loc(.file_link_editor)) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Picker("", selection: $fileLinkEditor) {
+                        ForEach(FileLinkEditor.allCases) { editor in
+                            Text(editor.label).tag(editor)
+                        }
+                    }
+                    .labelsHidden().pickerStyle(.menu).frame(maxWidth: 220, alignment: .leading)
+
+                    if fileLinkEditor == .custom {
+                        TextField(loc(.file_link_editor_template_hint),
+                                  text: $fileLinkTemplate)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(maxWidth: 360)
+                            .font(.system(.body, design: .monospaced))
+                        Text(loc(.file_link_editor_template_hint))
+                            .font(.caption).foregroundStyle(.secondaryText)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
             }
         }
     }

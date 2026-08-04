@@ -223,7 +223,10 @@ struct SftpSidePanelView: View {
                     if case .failed = $0.status { return true }; return false }) {
                     HStack {
                         Spacer()
-                        Button(loc(.clear_completed)) { uploads.removeAll() }
+                        Button(loc(.clear_completed)) {
+                            // Only drop finished records — never the in-flight ones.
+                            uploads.removeAll { if case .uploading = $0.status { return false }; return true }
+                        }
                             .controlSize(.small).buttonStyle(.plain)
                             .foregroundStyle(.secondaryText)
                             .font(.system(size: 11))

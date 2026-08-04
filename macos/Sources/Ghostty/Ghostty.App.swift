@@ -828,39 +828,99 @@ extension Ghostty {
             _ v: ghostty_action_open_url_s
         ) -> Bool {
             let action = Ghostty.Action.OpenURL(c: v)
+            let raw = action.url
+            guard !raw.isEmpty else { return false }
 
-            // If the URL doesn't have a valid scheme we assume its a file path. The URL
-            // initializer will gladly take invalid URLs (e.g. plain file paths) and turn
-            // them into schema-less URLs, but these won't open properly in text editors.
-            // See: https://github.com/ghostty-org/ghostty/issues/8763
-            let url: URL
-            if let candidate = URL(string: action.url), candidate.scheme != nil {
-                url = candidate
-            } else {
-                // Expand ~ to the user's home directory so that file paths
-                // like ~/Documents/file.txt resolve correctly.
-                let expandedPath = NSString(string: action.url).standardizingPath
-                url = URL(filePath: expandedPath)
+            // Real URLs with a scheme (http, mailto, ssh, git, …) open with the
+            // system default handler. `file:` URLs are local file paths and are
+            // handled below.
+            if let url = URL(string: raw), let scheme = url.scheme, !scheme.isEmpty, !url.isFileURL {
+                return openExternalURL(url, kind: action.kind)
             }
+
+            // Everything else is treated as a (possibly remote) file path.
+            // Stack-trace / compiler style links (`/path/file.go:154`) carry a
+            // `:line[:col]` suffix that must be split off before the file can
+            // be found.
+            let parsed = FileLineLink.parse(raw)
+
+            var path = parsed?.path ?? raw
+            if let url = URL(string: raw), url.isFileURL {
+                // `file:///x/y.md` links carry the path in the URL.
+                path = url.path
+            }
+
+            // Expand ~ to the user's home directory so that file paths like
+            // ~/Documents/file.txt resolve correctly.
+            path = NSString(string: path).standardizingPath
+                .trimmingCharacters(in: .whitespacesAndNewlines)
 
             // Markdown files open in our in-app viewer (rendered + editable
             // source, like Warp) instead of an external app. md4c powers the
-            // rendering (see MarkdownHTML). Only for local files that exist;
-            // everything else falls through to the default behavior below.
-            if url.isFileURL,
-               ["md", "markdown"].contains(url.pathExtension.lowercased()),
-               FileManager.default.fileExists(atPath: url.path) {
-                let path = url.path
+            // rendering (see MarkdownHTML). Only for local files that exist.
+            if ["md", "markdown"].contains(URL(fileURLWithPath: path).pathExtension.lowercased()),
+               FileManager.default.fileExists(atPath: path) {
+                let p = path
                 DispatchQueue.main.async {
-                    FileEditorWindowController.shared.open(path: path)
+                    FileEditorWindowController.shared.open(path: p)
                 }
                 return true
             }
 
-            switch action.kind {
+            // `.text` kind (e.g. the "Open Config" action): open with the
+            // default editor for the extension or the system text editor.
+            if action.kind == .text, FileManager.default.fileExists(atPath: path) {
+                let fileURL = URL(fileURLWithPath: path)
+                let editor = NSWorkspace.shared.defaultApplicationURL(forExtension: fileURL.pathExtension)
+                    ?? NSWorkspace.shared.defaultTextEditor
+                if let textEditor = editor {
+                    NSWorkspace.shared.open([fileURL], withApplicationAt: textEditor, configuration: NSWorkspace.OpenConfiguration())
+                    return true
+                }
+            }
+
+            var isDir: ObjCBool = false
+            if FileManager.default.fileExists(atPath: path, isDirectory: &isDir) {
+                // Exists locally — open with the user's configured editor
+                // (GoLand, VS Code, …), jumping to the line when the link
+                // carried a `:line[:col]` suffix. "System Default" opens the
+                // file with the default app for its type.
+                let target = FileLineLink.Target(
+                    path: path,
+                    line: parsed?.line,
+                    column: parsed?.column
+                )
+                DispatchQueue.main.async {
+                    FileLineLink.open(target)
+                }
+                return true
+            }
+
+            // The file doesn't exist on this machine — common for paths from a
+            // remote server's logs. Tell the user instead of silently no-oping,
+            // and let them copy the path.
+            if FileLineLink.looksLikePath(raw) {
+                DispatchQueue.main.async {
+                    MissingPathAlert.show(path: raw)
+                }
+                return true
+            }
+
+            // Last resort: let the OS try to handle it.
+            NSWorkspace.shared.open(URL(filePath: path))
+            return true
+        }
+
+        private static func openExternalURL(
+            _ url: URL,
+            kind: Ghostty.Action.OpenURL.Kind
+        ) -> Bool {
+            switch kind {
             case .text:
-                // Open with the default editor for `*.ghostty` file or just system text editor
-                let editor = NSWorkspace.shared.defaultApplicationURL(forExtension: url.pathExtension) ?? NSWorkspace.shared.defaultTextEditor
+                // Open with the default editor for the extension or the system
+                // text editor.
+                let editor = NSWorkspace.shared.defaultApplicationURL(forExtension: url.pathExtension)
+                    ?? NSWorkspace.shared.defaultTextEditor
                 if let textEditor = editor {
                     NSWorkspace.shared.open([url], withApplicationAt: textEditor, configuration: NSWorkspace.OpenConfiguration())
                     return true

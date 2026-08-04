@@ -2081,15 +2081,42 @@ fn resolvePathForOpening(
 
         const resolved = try std.fs.path.resolve(self.alloc, &.{ terminal_pwd, path });
 
-        std.fs.accessAbsolute(resolved, .{}) catch {
-            self.alloc.free(resolved);
-            return null;
-        };
+        if (std.fs.accessAbsolute(resolved, .{})) |_| {
+            return resolved;
+        } else |_| {}
+        self.alloc.free(resolved);
 
-        return resolved;
+        // Compiler/stack-trace style `file.go:154[:3]`: the raw text isn't an
+        // existing file until the `:line[:col]` suffix is stripped. Resolve
+        // the base file and re-append the suffix so the apprt can line-jump.
+        if (lineColumnSuffixStart(path)) |suffix_idx| {
+            const base = try std.fs.path.resolve(self.alloc, &.{ terminal_pwd, path[0..suffix_idx] });
+            defer self.alloc.free(base);
+            std.fs.accessAbsolute(base, .{}) catch return null;
+            return try std.mem.concat(self.alloc, u8, &.{ base, path[suffix_idx..] });
+        }
+
+        return null;
     }
 
     return null;
+}
+
+/// Returns the index where a trailing `:line[:col]` suffix begins in `path`,
+/// or null when there is no such suffix.
+fn lineColumnSuffixStart(path: []const u8) ?usize {
+    var start: ?usize = null;
+    var i: usize = path.len;
+    var groups: u8 = 0;
+    while (groups < 2) : (groups += 1) {
+        var j = i;
+        while (j > 0 and std.ascii.isDigit(path[j - 1])) j -= 1;
+        // Need at least one digit preceded by ':' (and a non-empty base).
+        if (j == i or j < 2 or path[j - 1] != ':') break;
+        i = j - 1;
+        start = i;
+    }
+    return start;
 }
 
 /// Returns the x/y coordinate of where the IME (Input Method Editor)

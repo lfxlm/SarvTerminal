@@ -58,17 +58,27 @@ final class SFTPTransferManager: ObservableObject {
     /// Maximum number of completed/failed/cancelled records to keep in memory.
     private let maxCompletedRecords = 50
 
-    func cancelTransfer() {
-        for (_, task) in activeTasks { task.cancel() }
-        activeTasks.removeAll()
+    /// Cancel one transfer, or all of them when `id` is nil. A single-row
+    /// cancel must never kill the other in-flight transfers, so the UI passes
+    /// the specific record id.
+    func cancelTransfer(id: UUID? = nil) {
+        if let id {
+            activeTasks[id]?.cancel()
+            activeTasks[id] = nil
+        } else {
+            for (_, task) in activeTasks { task.cancel() }
+            activeTasks.removeAll()
+        }
     }
 
-    /// Clean up completed records when they exceed the limit.
+    /// Clean up completed records when they exceed the limit. Always keeps the
+    /// in-flight ones and the MOST RECENT finished ones (suffix, since the
+    /// array is in start order).
     func cleanupCompletedRecords() {
         let nonActive = transfers.filter { $0.status != .inProgress }
         if nonActive.count > maxCompletedRecords {
             let active = transfers.filter { $0.status == .inProgress }
-            let recentCompleted = nonActive.prefix(maxCompletedRecords)
+            let recentCompleted = nonActive.suffix(maxCompletedRecords)
             let recentIds = Set(recentCompleted.map(\.id))
             transfers = transfers.filter { $0.status == .inProgress || recentIds.contains($0.id) }
         }

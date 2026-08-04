@@ -360,6 +360,13 @@ enum LocalizedKey: String, CaseIterable {
     case g_scroll_speed
     case g_links
     case g_detect_urls
+    case file_link_editor
+    case file_link_editor_default
+    case file_link_editor_custom
+    case file_link_editor_template_hint
+    case path_not_found_title
+    case path_not_found_message
+    case copy_path
     case g_clipboard_card
     case g_copy_select
     case g_clipboard_read
@@ -1040,6 +1047,13 @@ private let enStrings: [LocalizedKey: String] = [
     .g_scroll_speed: "Scroll speed",
     .g_links: "Links",
     .g_detect_urls: "Detect URLs (⌘-click to open)",
+    .file_link_editor: "Open file links with",
+    .file_link_editor_default: "System Default",
+    .file_link_editor_custom: "Custom…",
+    .file_link_editor_template_hint: "URL template, e.g. vscode://file${file}:${line}:${column}",
+    .path_not_found_title: "File Not Found",
+    .path_not_found_message: "This path doesn't exist on your Mac. It may only exist on a remote server.",
+    .copy_path: "Copy Path",
     .g_clipboard_card: "Clipboard",
     .g_copy_select: "Copy on select",
     .g_clipboard_read: "Clipboard read",
@@ -1705,6 +1719,13 @@ private let zhStrings: [LocalizedKey: String] = [
     .g_scroll_speed: "滚动速度",
     .g_links: "链接",
     .g_detect_urls: "检测 URL（⌘-点击打开）",
+    .file_link_editor: "文件路径链接打开方式",
+    .file_link_editor_default: "系统默认",
+    .file_link_editor_custom: "自定义…",
+    .file_link_editor_template_hint: "URL 模板，例如 vscode://file${file}:${line}:${column}",
+    .path_not_found_title: "文件不存在",
+    .path_not_found_message: "此路径在你的 Mac 上不存在，它可能只存在于远程服务器。",
+    .copy_path: "复制路径",
     .g_clipboard_card: "剪贴板",
     .g_copy_select: "选择时复制",
     .g_clipboard_read: "剪贴板读取",

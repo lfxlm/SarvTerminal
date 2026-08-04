@@ -126,8 +126,22 @@ const bare_relative_path_branch =
 // the terminal pwd and verifies the file exists (`resolvePathForOpening`), so a
 // non-file mention like `README.md` in prose won't actually open.
 const bare_openable_file_branch =
-    \\(?<![\w./~$-])[\w][\w\-.]*\.(?:md|markdown)\b
+    \\(?<![\w./~$-])[\w][\w.-]*\.(?:md|markdown)\b
 ;
+
+// Branch 5 (SarvTerminal): `filename.ext:line[:col]` — stack-trace/compiler
+// style bare filenames with no directory separator (`work_task.go:154`). The
+// extension must start with a letter (so `1.2.3:` in prose doesn't match) and
+// the digits must be followed by `:`, whitespace, comma or EOL. The click
+// handler still resolves against pwd and verifies the file exists.
+//
+// NOTE: `-` must be the LAST element of a char class here — oniguruma
+// mis-parses `\w` followed by an escaped `-` (`[\w\-.]`) as an empty
+// character range (EmptyRangeInCharClass).
+const bare_file_line_branch =
+    \\(?<![\w./~$-])(?:[\w][\w.-]*\.[A-Za-z_][\w]*):\d+(?::\d+)?(?=(?::|：)?[\s,]|$)
+;
+
 
 /// Scheme URLs only (http, mailto, file:, …). Registered as a default link that
 /// highlights only while a mod is held (classic terminal behavior).
@@ -141,7 +155,9 @@ pub const path_regex_hover =
     "|" ++
     bare_relative_path_branch ++
     "|" ++
-    bare_openable_file_branch;
+    bare_openable_file_branch ++
+    "|" ++
+    bare_file_line_branch;
 
 /// DIRECTORY-like / extensionless paths (`/usr/local/bin`, `~/projects/x`, and
 /// paths with spaces). Broad enough to also match a `/word/` fragment inside
@@ -594,6 +610,30 @@ test "path confidence tiers" {
         null,
     );
     defer modhold.deinit();
+
+    // Bare `filename.ext:line` (stack-trace/compiler output) must plain-highlight
+    // — the cmd-click link fix. Includes real user log lines.
+    const file_line_cases = [_][]const u8{
+        "    /Volumes/vm/code/git/ar/ar_robot_task/internal/igentoo_client/websocket/work_task.go:154",
+        "work_task.go:154: iSOM-aigentoo_18_1jn3xmz3t00dkclw3akrqoa140n8784m_CNXHKXAR2621000329: 节点[打开文件]运行异常, 工作即将结束",
+        "2026-07-31T16:16:43 [ERRO] {c18e306bb969c718e8b23e5d4b50d9ce} build.sh:42: something",
+        "work_task.go:154",
+        "foo.bar.txt:3",
+    };
+    for (file_line_cases) |input| {
+        var r = try hover.search(input, .{});
+        r.deinit();
+    }
+
+    // A bare `1.2.3:` in prose is a version number, NOT a file:line — must not
+    // match. The extension must start with a letter.
+    {
+        var maybe = hover.search("version 1.2.3: release notes for the next drop", .{});
+        if (maybe) |*r| {
+            r.deinit();
+            return error.VersionNumberMatchedFileLine;
+        } else |_| {}
+    }
 
     // File-LIKE paths (extension / bare openable filename) must plain-highlight.
     const hover_cases = [_][]const u8{

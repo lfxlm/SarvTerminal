@@ -55,8 +55,18 @@ final class SFTPTransferManager: ObservableObject {
     /// All in-flight transfer tasks, keyed by record ID, for cancellation.
     private var activeTasks: [UUID: Task<Void, Never>] = [:]
 
+    /// Retry closures keyed by record ID — re-runs the same source/dest/item
+    /// after a failure, keeping the record row in place.
+    private var retryHandlers: [UUID: () -> Void] = [:]
+
     /// Maximum number of completed/failed/cancelled records to keep in memory.
     private let maxCompletedRecords = 50
+
+    /// Re-run a failed transfer with the SAME record (keeps its row in the
+    /// table and its history position). No-op for a finished or in-flight one.
+    func retry(id: UUID) {
+        retryHandlers[id]?()
+    }
 
     /// Cancel one transfer, or all of them when `id` is nil. A single-row
     /// cancel must never kill the other in-flight transfers, so the UI passes
@@ -107,6 +117,14 @@ final class SFTPTransferManager: ObservableObject {
         )
         transfers.append(record)
 
+        // Capture everything the retry button needs, keyed by this record's id.
+        let sourceTabRef = sourceTab
+        let destTabRef = destTab
+        retryHandlers[id] = { [weak self] in
+            self?.retryTransfer(id: id, sourceTab: sourceTabRef, destTab: destTabRef,
+                                item: item, resolution: resolution)
+        }
+
         activeTasks[id] = Task { @MainActor [weak self] in
             defer { self?.activeTasks[id] = nil }
             await self?.performTransfer(
@@ -118,6 +136,26 @@ final class SFTPTransferManager: ObservableObject {
     }
 
     // MARK: - Internal
+
+    /// Re-run a failed transfer keeping the same record (row + id). The record
+    /// flips back to `.inProgress` and a fresh task drives it.
+    private func retryTransfer(id: UUID, sourceTab: SFTPTab, destTab: SFTPTab,
+                               item: FileItem, resolution: ConflictResolution) {
+        guard activeTasks[id] == nil,
+              let idx = transfers.firstIndex(where: { $0.id == id }),
+              case .failed = transfers[idx].status else { return }
+        transfers[idx].status = .inProgress
+        transfers[idx].transferred = 0
+        transfers[idx].bytesPerSecond = 0
+        activeTasks[id] = Task { @MainActor [weak self] in
+            defer { self?.activeTasks[id] = nil }
+            await self?.performTransfer(
+                sourceTab: sourceTab, destTab: destTab,
+                item: item, resolution: resolution,
+                id: id
+            )
+        }
+    }
 
     /// Return the index of the record with the given id.
     private func idx(of id: UUID) -> Int? {

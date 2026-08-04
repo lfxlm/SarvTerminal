@@ -276,11 +276,46 @@ struct FileViewerView: View {
             .fixedSize()
             .hoverTipText(loc(.more))
 
-            Button { onClose() } label: { Image(systemName: "xmark") }
+            Button { requestClose() } label: { Image(systemName: "xmark") }
                 .buttonStyle(.plain).hoverTipText(loc(.close))
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
         .background(Color(NSColor.windowBackgroundColor))
+    }
+
+    /// Close the viewer, but never throw away unsaved edits. With auto-save on,
+    /// flush the pending save first; otherwise ask Save / Don't Save / Cancel.
+    @MainActor
+    private func requestClose() {
+        guard model.isDirty else { onClose(); return }
+        if SFTPSettings.shared.autoSave {
+            Task { @MainActor in
+                await model.save()
+                if model.error == nil { onClose() }
+            }
+        } else {
+            SarvAlert.present(
+                title: loc(.unsaved_changes_title),
+                message: String(format: loc(.unsaved_changes_message), model.item.name),
+                buttons: [
+                    .init(loc(.save), isDefault: true),
+                    .init(loc(.dont_save), isDestructive: true),
+                    .init(loc(.cancel), isCancel: true),
+                ]
+            ) { result in
+                switch result.buttonIndex {
+                case 0:
+                    Task { @MainActor in
+                        await model.save()
+                        if model.error == nil { onClose() }
+                    }
+                case 1:
+                    onClose()
+                default:
+                    break
+                }
+            }
+        }
     }
 
     @ViewBuilder

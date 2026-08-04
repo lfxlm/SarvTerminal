@@ -88,6 +88,13 @@ enum LocalizedKey: String, CaseIterable {
     case delete_confirm_detail
     case delete_multi_title
     case delete_multi_message
+    case delete_failed_title
+    case delete_failed_message
+    case cancel_transfer_tip
+    case retry
+    case retry_transfer_tip
+    case cancel_all
+    case cancel_all_transfers_tip
 
     // ── Settings ────────────────────────────────────────
     case auto_save
@@ -133,6 +140,9 @@ enum LocalizedKey: String, CaseIterable {
     case indent
     case spaces_2
     case spaces_4
+    case dont_save
+    case unsaved_changes_title
+    case unsaved_changes_message
 
     // ── Permissions sheet ───────────────────────────────
     case permissions
@@ -775,6 +785,13 @@ private let enStrings: [LocalizedKey: String] = [
     .delete_confirm_detail: "This can't be undone.",
     .delete_multi_title: "Delete %d items?",
     .delete_multi_message: "Are you sure you want to delete %d items? This can't be undone.",
+    .delete_failed_title: "Delete Failed",
+    .delete_failed_message: "%ld of %ld items couldn't be deleted:",
+    .cancel_transfer_tip: "Cancel transfer",
+    .retry: "Retry",
+    .retry_transfer_tip: "Retry transfer",
+    .cancel_all: "Cancel all",
+    .cancel_all_transfers_tip: "Cancel all in-flight transfers",
 
     // ── Settings ────────────────────────────────────────
     .auto_save: "Auto-save",
@@ -820,6 +837,9 @@ private let enStrings: [LocalizedKey: String] = [
     .indent: "Indent",
     .spaces_2: "2 spaces",
     .spaces_4: "4 spaces",
+    .dont_save: "Don't Save",
+    .unsaved_changes_title: "Unsaved Changes",
+    .unsaved_changes_message: "\"%@\" has unsaved changes.",
 
     // ── Permissions sheet ───────────────────────────────
     .permissions: "Permissions",
@@ -1447,6 +1467,13 @@ private let zhStrings: [LocalizedKey: String] = [
     .delete_confirm_detail: "此操作不可撤销。",
     .delete_multi_title: "删除 %d 个项目？",
     .delete_multi_message: "确定要删除 %d 个项目吗？此操作不可撤销。",
+    .delete_failed_title: "删除失败",
+    .delete_failed_message: "有 %ld/%ld 个项目删除失败：",
+    .cancel_transfer_tip: "取消传输",
+    .retry: "重试",
+    .retry_transfer_tip: "重试传输",
+    .cancel_all: "取消全部",
+    .cancel_all_transfers_tip: "取消所有进行中的传输",
 
     // ── Settings ────────────────────────────────────────
     .auto_save: "自动保存",
@@ -1492,6 +1519,9 @@ private let zhStrings: [LocalizedKey: String] = [
     .indent: "缩进",
     .spaces_2: "2 空格",
     .spaces_4: "4 空格",
+    .dont_save: "不保存",
+    .unsaved_changes_title: "未保存的更改",
+    .unsaved_changes_message: "“%@” 有未保存的更改。",
 
     // ── Permissions sheet ───────────────────────────────
     .permissions: "权限",

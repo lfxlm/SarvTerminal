@@ -54,13 +54,23 @@ struct UnifiedTransferTable: View {
                 Spacer(minLength: 0)
 
                 if !manager.transfers.isEmpty {
+                    let hasActive = manager.transfers.contains(where: { $0.status == .inProgress })
+                    if hasActive {
+                        Button(loc(.cancel_all)) {
+                            manager.cancelTransfer()
+                        }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.red)
+                        .hoverTipText(loc(.cancel_all_transfers_tip))
+                    }
                     Button(loc(.clear_completed)) {
                         manager.transfers.removeAll()
                     }
                     .buttonStyle(.plain)
                     .font(.system(size: 11))
                     .foregroundStyle(.secondaryText)
-                    .disabled(manager.transfers.contains(where: { $0.status == .inProgress }))
+                    .disabled(hasActive)
                 }
             }
             .padding(.horizontal, 12)
@@ -78,6 +88,7 @@ struct UnifiedTransferTable: View {
                                 record: record,
                                 byteString: byteString,
                                 onCancel: { manager.cancelTransfer(id: record.id) },
+                                onRetry: { manager.retry(id: record.id) },
                                 onDelete: { manager.transfers.removeAll { $0.id == record.id } }
                             )
                             Divider().opacity(0.4)
@@ -106,6 +117,7 @@ private struct TransferRecordRow: View {
     let record: TransferRecord
     let byteString: (Int64) -> String
     let onCancel: () -> Void
+    let onRetry: () -> Void
     let onDelete: () -> Void
 
     private func formatElapsed(_ seconds: TimeInterval) -> String {
@@ -214,7 +226,24 @@ private struct TransferRecordRow: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.red)
-            case .completed, .failed, .cancelled:
+                .hoverTipText(loc(.cancel_transfer_tip))
+            case .failed:
+                HStack(spacing: 8) {
+                    Button(action: onRetry) {
+                        Image(systemName: "arrow.clockwise.circle.fill")
+                            .font(.system(size: 11))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Color.accentColor)
+                    .hoverTipText(loc(.retry_transfer_tip))
+                    Button(action: onDelete) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 11))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondaryText)
+                }
+            case .completed, .cancelled:
                 Button(action: onDelete) {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 11))

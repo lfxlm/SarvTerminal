@@ -1823,6 +1823,53 @@ Explicitly **do not** port this as a second `GtkWindow` layered over the main on
 
 **Verify on Linux.** Put the terminal in a broken mode (`printf '\e[?1h'` then arrows show `^[OA`, or kill a raw-mode TUI so the shell echoes control bytes — arrows show `^[OA`, clear-screen adds a literal `^L`); the menu "Reset Terminal" (or the bound key) restores normal input **and** the TTY (arrows navigate history again, clear-screen clears instead of printing `^L`) — no typed `reset` needed. Then open a fresh shell, break DECCKM from a killed program, and confirm the next prompt's arrow keys work without a manual reset (the auto-heal).
 
+## 33. SFTP transfers: real cancellation, retry, and cancel-all
+
+**What it is.** The SFTP dual-pane window and the side panel track every transfer with a row that can be cancelled, retried, or mass-cancelled:
+- **Real cancellation.** The per-row ✕ on an in-flight upload/download now cancels the underlying transfer `Task`, which terminates the ssh/scp child process — the file really stops, it doesn't finish silently in the background (previously the ✕ only removed the row and the upload kept running to completion). The row flips to "Cancelled". Closing the panel also cancels every in-flight transfer.
+- **Retry.** A `failed` row gains a retry button that re-runs the SAME source → destination → file with the SAME record (keeping its row and history position); the record flips back to `.inProgress`.
+- **Cancel all.** When any transfer is in flight, the table header shows a "Cancel all" button that cancels every in-flight transfer at once.
+
+**Logic (platform-agnostic).**
+- Each transfer record keeps a reference to its driving `Task` (`activeTasks[recordID]`) plus a retry closure capturing `(sourceTab, destTab, item, resolution)`. Cancel = `task.cancel()`. Because the process runner wraps the child `Process` in a cancellation handler, cancel terminates the child; a cancelled await must be distinguished from a failure by checking `Task.isCancelled` and marking the record `.cancelled` rather than `.failed`.
+- Retry = guard the record is `.failed` and not already in flight, reset status/bytes to zero, and launch a fresh task over the same captured params.
+- The bounded history auto-cleanup deliberately never evicts in-flight records, so a failed row always remains retryable.
+
+**macOS→Linux.** Task cancellation is the only real hook — the GTK/Zig apprt should hold the child pid and `SIGTERM`/`kill()` it on cancel, and apply the same "is-cancelled vs error" distinction when the row updates. Retry is just re-invoking the copy with stored params and resetting the row.
+
+**Verify on Linux.** Start a large upload, hit ✕ → row shows "Cancelled" and the remote file stops growing (`ls -l` size stalls; no orphaned `scp`/`sftp` in `ps`). Close the panel mid-transfer → same. Force a failure mid-copy → Retry appears and re-runs it; with 3 concurrent transfers, "Cancel all" stops all three.
+
+## 34. SFTP data safety: delete feedback, copy/download conflicts, dirty-close
+
+**What it is.** Four silent-data-loss holes closed:
+- **Delete failures are surfaced.** `performDelete` (dual-pane window and side panel) no longer swallows errors with `try?`; each failing item is collected and, after the reload, an alert lists "N of M items couldn't be deleted" with per-item reasons (permission, busy file, vanished directory). Previously a failure looked like a successful deletion.
+- **No silent overwrite on copy/download.** `copyItems` (window) and `downloadItems` (side panel) check the destination for a same-named entry BEFORE copying; collisions queue a `ConflictDialog` (Replace / Duplicate / Skip / Stop, with an "Apply to all" checkbox for batches) instead of blindly `.replace`. Non-conflicting items are held and transferred once the queue resolves. Previously the dual-pane copy always `.replace`d (the conflict dialog was dead code).
+- **Viewer close with unsaved edits asks first.** The file viewer's ✕ checks `isDirty`; with auto-save off it prompts Save / Don't Save / Cancel; with auto-save on it flushes the pending debounced save before closing.
+
+**Logic (platform-agnostic).**
+- Collect-then-report: never let a later `reload()` clear an error that a deletion caused — gather failures during the delete loop, reload once, then show a summary dialog.
+- Existence check = backend `exists(destPath)` before copy; the conflict queue is drained one dialog at a time and "Apply to all" resolves the remainder in a single choice — the same pattern already used for upload conflicts.
+- Dirty tracking is `content != lastSavedContent`; close saves/flushes/discards based on the auto-save preference.
+
+**macOS→Linux.** `exists` maps to a remote `test -e` (same shell-out) or `g_stat` on local; the conflict dialog is any GTK modal (`GtkAlertDialog`); the dirty-check is the same string comparison. The "collect failures then show one summary" pattern is toolkit-independent.
+
+**Verify on Linux.** Delete a file in a read-only dir → alert lists the failure instead of a silent no-op. Copy `a.txt` to a pane that already has `a.txt` → conflict dialog (replace/duplicate/skip/stop, batch applies to all). Edit a file and close without saving (auto-save off) → Save/Don't Save/Cancel prompt; with auto-save on, closing flushes the edit.
+
+## 35. Connection & host-search feedback: spinner, password retry focus, ⌘F
+
+**What it is.**
+- The SSH connection popup's `.connecting` stage shows a `ProgressView` spinner instead of a bare text line.
+- On a rejected password the field is cleared and keyboard focus returns to it, so the user retypes immediately (the "Ask"-host re-prompt flow).
+- The Vaults > Hosts quick-connect/search bar is focusable with ⌘F (same muscle memory as Finder).
+
+**Logic (platform-agnostic).**
+- The connection popup is stage-driven; the connecting stage renders a small indeterminate spinner. The password re-prompt clears the field and moves focus when the attempt counter increments (not just when the stage changes).
+- ⌘F is a hidden command button bound to `@FocusState` on the search TextField.
+
+**macOS→Linux.** A stage machine with a spinner is toolkit-agnostic (GTK: `GtkSpinner`). "Clear field + grab focus on retry" = `gtk_editable_set_text("")` + `gtk_widget_grab_focus`. ⌘F → Ctrl+F via `GtkShortcut`/`GtkEventControllerKey` + `gtk_editable_set_position`.
+
+**Verify on Linux.** Start a slow connect → spinner shows. Connect to an "Ask"-password host with a wrong password → field clears and focus is already in it for the next try. Ctrl+F on the hosts page focuses the search bar.
+
 ## Appendix A. Visual design reference
 
 This appendix documents the concrete visual specification of the macOS "Vaults" host-manager surfaces so a GTK/Adwaita implementation can match the look. Values are extracted verbatim from the SwiftUI source under `macos/Sources/Features/HostManager/`. Where a value is not present in source, it is marked **"not specified in source."**

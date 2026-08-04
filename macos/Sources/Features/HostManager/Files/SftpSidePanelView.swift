@@ -26,6 +26,9 @@ struct SftpSidePanelView: View {
     }
     @State private var uploads: [UploadProgress] = []
     @State private var activePollers: [Task<Void, Never>] = []
+    /// In-flight upload/download Tasks keyed by record id — lets the per-row
+    /// cancel button actually stop the transfer (not just hide the row).
+    @State private var activeTransfers: [UUID: Task<Void, Never>] = [:]
 
     // ── Dialog state ──────────────────────────────────────────────
     @State private var showNewFolder = false
@@ -38,6 +41,13 @@ struct SftpSidePanelView: View {
     @State private var uploadConflictQueue: [URL] = []
     /// URLs that had no conflict and can be uploaded immediately once the queue is resolved.
     @State private var uploadNoConflict: [URL] = []
+    /// Queue of FileItems whose local destination name already exists; shown
+    /// one-at-a-time via ConflictDialog (downloads).
+    @State private var downloadConflictQueue: [FileItem] = []
+    /// Items with no conflict, pending once the download conflict queue resolves.
+    @State private var downloadNoConflict: [FileItem] = []
+    /// The chosen download directory while a download conflict queue is active.
+    @State private var downloadDestDir: String?
     /// Debounced remote reload so batch uploads refresh the listing once, not N times.
     @State private var reloadTask: Task<Void, Never>?
 
@@ -183,8 +193,19 @@ struct SftpSidePanelView: View {
                 }
             }
         }
+        .overlay {
+            if let item = downloadConflictQueue.first {
+                ConflictDialog(name: item.name, showApplyToAll: true) { resolution, all in
+                    resolveDownloadConflict(item, resolution, applyToAll: all)
+                }
+            }
+        }
         .onDisappear {
-            // Clean up all active pollers when the panel disappears
+            // Clean up all active transfers AND pollers when the panel disappears
+            // — a cancelled Task terminates the underlying ssh/scp process, so
+            // uploads don't keep running invisibly after the panel closes.
+            activeTransfers.values.forEach { $0.cancel() }
+            activeTransfers.removeAll()
             activePollers.forEach { $0.cancel() }
             activePollers.removeAll()
             reloadTask?.cancel()
@@ -327,10 +348,11 @@ struct SftpSidePanelView: View {
             // Cancel / Dismiss
             switch u.status {
             case .uploading:
-                Button { uploads.removeAll(where: { $0.id == u.id }) } label: {
+                Button { cancelTransfer(u.id) } label: {
                     Image(systemName: "xmark.circle.fill").font(.system(size: 11))
                 }
                 .buttonStyle(.plain).foregroundStyle(.secondaryText)
+                .hoverTipText(loc(.cancel_transfer_tip))
             case .completed, .failed, .cancelled:
                 Button { uploads.removeAll(where: { $0.id == u.id }) } label: {
                     Image(systemName: "xmark.circle.fill").font(.system(size: 11))
@@ -395,32 +417,96 @@ struct SftpSidePanelView: View {
         panel.begin { response in
             guard response == .OK, let destURL = panel.url else { return }
             let local = LocalFileBackend()
-            for item in items {
-                let destPath = local.join(destURL.path, item.name)
-                let size = item.isDirectory ? 0 : item.size
-                let prog = UploadProgress(
-                    fileName: item.name, fileSize: size,
-                    direction: .download, transferred: 0, bytesPerSecond: 0,
-                    startTime: Date(), status: .uploading
-                )
-                uploads.append(prog)
-                let pid = prog.id
-                let poller = startPoller(for: pid, destBackend: local, destPath: destPath, totalSize: size)
-
-                Task {
-                    defer { poller.cancel() }
-                    do {
-                        try await FileTransfer.copy(
-                            item: item, from: remote.backend, to: local,
-                            destDir: destURL.path, resolution: .replace
-                        )
-                        snapToFullSize(pid)
-                        setStatus(pid, .completed)
-                    } catch {
-                        setStatus(pid, .failed(error.localizedDescription))
+            Task {
+                // Never silently overwrite a local file with the same name.
+                var conflicts: [FileItem] = []
+                var safe: [FileItem] = []
+                for item in items {
+                    if (try? await local.exists(local.join(destURL.path, item.name))) ?? false {
+                        conflicts.append(item)
+                    } else {
+                        safe.append(item)
                     }
                 }
+                if conflicts.isEmpty {
+                    performDownload(safe, destDir: destURL.path, resolution: .replace)
+                } else {
+                    downloadNoConflict = safe
+                    downloadDestDir = destURL.path
+                    downloadConflictQueue = conflicts
+                }
             }
+        }
+    }
+
+    /// Actually execute downloads (after any conflict confirmation).
+    private func performDownload(_ items: [FileItem], destDir: String, resolution: ConflictResolution) {
+        let local = LocalFileBackend()
+        for item in items {
+            let destPath = local.join(destDir, item.name)
+            let size = item.isDirectory ? 0 : item.size
+            let prog = UploadProgress(
+                fileName: item.name, fileSize: size,
+                direction: .download, transferred: 0, bytesPerSecond: 0,
+                startTime: Date(), status: .uploading
+            )
+            uploads.append(prog)
+            let pid = prog.id
+            let poller = startPoller(for: pid, destBackend: local, destPath: destPath, totalSize: size)
+            activeTransfers[pid] = Task {
+                defer {
+                    poller.cancel()
+                    activeTransfers.removeValue(forKey: pid)
+                }
+                do {
+                    try await FileTransfer.copy(
+                        item: item, from: remote.backend, to: local,
+                        destDir: destDir, resolution: resolution
+                    )
+                    snapToFullSize(pid)
+                    setStatus(pid, .completed)
+                } catch {
+                    if Task.isCancelled { setStatus(pid, .cancelled) }
+                    else { setStatus(pid, .failed(error.localizedDescription)) }
+                }
+            }
+        }
+    }
+
+    /// Handle a user choice from a download ConflictDialog.
+    /// `applyToAll` resolves the whole remaining queue with one choice.
+    private func resolveDownloadConflict(_ item: FileItem, _ resolution: ConflictResolution, applyToAll: Bool) {
+        guard let destDir = downloadDestDir, !downloadConflictQueue.isEmpty else { return }
+
+        if applyToAll {
+            let remaining = downloadConflictQueue
+            let safe = downloadNoConflict
+            downloadConflictQueue.removeAll()
+            downloadNoConflict.removeAll()
+            switch resolution {
+            case .stop, .skip:
+                break
+            case .replace, .duplicate, .merge:
+                performDownload(remaining, destDir: destDir, resolution: resolution)
+                if !safe.isEmpty { performDownload(safe, destDir: destDir, resolution: .replace) }
+            }
+            return
+        }
+
+        downloadConflictQueue.removeFirst()
+        switch resolution {
+        case .stop:
+            downloadConflictQueue.removeAll()
+            downloadNoConflict.removeAll()
+            return
+        case .skip:
+            break
+        case .replace, .duplicate, .merge:
+            performDownload([item], destDir: destDir, resolution: resolution)
+        }
+        if downloadConflictQueue.isEmpty && !downloadNoConflict.isEmpty {
+            performDownload(downloadNoConflict, destDir: destDir, resolution: .replace)
+            downloadNoConflict.removeAll()
         }
     }
 
@@ -554,10 +640,11 @@ struct SftpSidePanelView: View {
             let poller = startPoller(for: pid, destBackend: remote.backend, destPath: destPath, totalSize: fileSize)
             activePollers.append(poller)
 
-            Task {
+            activeTransfers[pid] = Task {
                 defer {
                     poller.cancel()
                     activePollers.removeAll { $0 == poller }
+                    activeTransfers.removeValue(forKey: pid)
                 }
                 do {
                     try await FileTransfer.copy(
@@ -568,10 +655,20 @@ struct SftpSidePanelView: View {
                     setStatus(pid, .completed)
                     scheduleReload()
                 } catch {
-                    setStatus(pid, .failed(error.localizedDescription))
+                    if Task.isCancelled { setStatus(pid, .cancelled) }
+                    else { setStatus(pid, .failed(error.localizedDescription)) }
                 }
             }
         }
+    }
+
+    /// Cancel a transfer that's still in flight — terminates the underlying
+    /// ssh/scp process via Task cancellation (see `runProcess`), so the upload
+    /// really stops instead of finishing silently in the background.
+    private func cancelTransfer(_ id: UUID) {
+        activeTransfers[id]?.cancel()
+        activeTransfers[id] = nil
+        setStatus(id, .cancelled)
     }
 
     private func startPoller(for pid: UUID, destBackend: FileBackend, destPath: String, totalSize: Int64) -> Task<Void, Never> {
@@ -600,8 +697,30 @@ struct SftpSidePanelView: View {
 
     @MainActor
     private func performDelete(_ items: [FileItem]) async {
-        for item in items { try? await remote.delete(item) }
+        var failures: [(name: String, message: String)] = []
+        for item in items {
+            do {
+                try await remote.backend.delete(item)
+            } catch {
+                let msg = (error as? FileOpError)?.message ?? error.localizedDescription
+                failures.append((item.name, msg))
+            }
+        }
         await remote.reload()
+        if !failures.isEmpty { presentDeleteFailures(failures, total: items.count) }
+    }
+
+    /// Surface delete failures instead of swallowing them — a permission error
+    /// or a busy file must not look like a successful deletion.
+    private func presentDeleteFailures(_ failures: [(name: String, message: String)], total: Int) {
+        let message = loc(.delete_failed_message, failures.count, total)
+            + "\n\n"
+            + failures.map { "\($0.name) — \($0.message)" }.joined(separator: "\n")
+        SarvAlert.present(
+            title: loc(.delete_failed_title),
+            message: message,
+            buttons: [.init(loc(.ok), isDefault: true)]
+        )
     }
 
     // MARK: - Image preview

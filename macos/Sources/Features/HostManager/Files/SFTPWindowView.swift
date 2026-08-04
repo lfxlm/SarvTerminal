@@ -23,7 +23,11 @@ struct SFTPWindowView: View {
     @State private var renameTarget: (side: Side, item: FileItem)?
     @State private var renameText = ""
     @State private var permTarget: (side: Side, item: FileItem)?
-    @State private var conflict: ConflictRequest?
+    /// Queue of copy requests whose destination name already exists; shown
+    /// one-at-a-time via ConflictDialog instead of silently overwriting.
+    @State private var copyConflictQueue: [ConflictRequest] = []
+    /// Copy requests with no conflict, pending once the conflict queue resolves.
+    @State private var copyPending: [ConflictRequest] = []
     @State private var pendingDeletion: PendingDeletion?
     @State private var imagePreview: ImagePreviewData?
 
@@ -173,8 +177,10 @@ struct SFTPWindowView: View {
             pendingDeletion = nil
         }
         .overlay {
-            if let c = conflict {
-                ConflictDialog(name: c.item.name) { r, _ in resolve(c, r) }
+            if let c = copyConflictQueue.first {
+                ConflictDialog(name: c.item.name, showApplyToAll: copyConflictQueue.count > 1) { r, all in
+                    resolveCopy(c, r, applyToAll: all)
+                }
             }
         }
         .overlay {
@@ -361,22 +367,94 @@ struct SFTPWindowView: View {
 
     @MainActor
     private func performDelete(_ items: [FileItem], model: SFTPBrowserModel) async {
-        for item in items { try? await model.delete(item) }
+        var failures: [(name: String, message: String)] = []
+        for item in items {
+            do {
+                try await model.backend.delete(item)
+            } catch {
+                let msg = (error as? FileOpError)?.message ?? error.localizedDescription
+                failures.append((item.name, msg))
+            }
+        }
         await model.reload()
+        if !failures.isEmpty { presentDeleteFailures(failures, total: items.count) }
+    }
+
+    /// Surface delete failures instead of swallowing them — a permission error
+    /// or a busy file must not look like a successful deletion.
+    private func presentDeleteFailures(_ failures: [(name: String, message: String)], total: Int) {
+        let message = loc(.delete_failed_message, failures.count, total)
+            + "\n\n"
+            + failures.map { "\($0.name) — \($0.message)" }.joined(separator: "\n")
+        SarvAlert.present(
+            title: loc(.delete_failed_title),
+            message: message,
+            buttons: [.init(loc(.ok), isDefault: true)]
+        )
     }
 
     private func copyItems(_ items: [FileItem], from side: Side) {
-        guard let sourceTab = (side == .left ? leftTabs : rightTabs).activeTab,
-              let destTab = otherGroup(side).activeTab else { return }
-        for item in items {
-            beginTransfer(item, from: side, resolution: .replace)
+        guard let destTab = otherGroup(side).activeTab else { return }
+        let dest = destTab.browser
+        Task {
+            // Check the destination FIRST — don't silently overwrite a file
+            // with the same name; queue a ConflictDialog instead.
+            var conflicts: [ConflictRequest] = []
+            var safe: [ConflictRequest] = []
+            for item in items {
+                let destPath = dest.backend.join(dest.path, item.name)
+                if (try? await dest.backend.exists(destPath)) ?? false {
+                    conflicts.append(ConflictRequest(item: item, fromSide: side))
+                } else {
+                    safe.append(ConflictRequest(item: item, fromSide: side))
+                }
+            }
+            if conflicts.isEmpty {
+                for req in safe { beginTransfer(req.item, from: req.fromSide, resolution: .replace) }
+            } else {
+                copyPending = safe
+                copyConflictQueue = conflicts
+            }
         }
     }
 
-    private func resolve(_ request: ConflictRequest, _ resolution: ConflictResolution) {
-        conflict = nil
-        guard resolution != .stop, resolution != .skip else { return }
-        beginTransfer(request.item, from: request.fromSide, resolution: resolution)
+    /// Handle a user choice from a copy ConflictDialog. `applyToAll` resolves
+    /// the whole remaining queue with one choice.
+    private func resolveCopy(_ request: ConflictRequest, _ resolution: ConflictResolution, applyToAll: Bool) {
+        guard !copyConflictQueue.isEmpty else { return }
+
+        if applyToAll {
+            let remaining = copyConflictQueue
+            let safe = copyPending
+            copyConflictQueue.removeAll()
+            copyPending.removeAll()
+            switch resolution {
+            case .stop, .skip:
+                break
+            case .replace, .duplicate, .merge:
+                for req in remaining { beginTransfer(req.item, from: req.fromSide, resolution: resolution) }
+                for req in safe { beginTransfer(req.item, from: req.fromSide, resolution: .replace) }
+            }
+            return
+        }
+
+        copyConflictQueue.removeFirst()
+        switch resolution {
+        case .stop:
+            copyConflictQueue.removeAll()
+            copyPending.removeAll()
+            return
+        case .skip:
+            break
+        case .replace, .duplicate, .merge:
+            beginTransfer(request.item, from: request.fromSide, resolution: resolution)
+        }
+        // Queue drained → also transfer everything that had no conflict.
+        if copyConflictQueue.isEmpty && !copyPending.isEmpty {
+            let safe = copyPending
+            copyPending.removeAll()
+            for req in safe { beginTransfer(req.item, from: req.fromSide, resolution: .replace) }
+        }
     }
 
     private func beginTransfer(_ item: FileItem, from side: Side, resolution: ConflictResolution) {

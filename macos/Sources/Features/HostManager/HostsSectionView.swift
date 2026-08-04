@@ -20,6 +20,7 @@ struct HostsSectionView: View {
     /// ssh-command runner (press Enter / click Connect). Matches the
     /// Termius dashboard's "Find a host or ssh user@hostname…" bar.
     @State private var quickConnect: String = ""
+    @FocusState private var quickConnectFocused: Bool
     @State private var hostDraft: SavedHost? = nil
     @State private var groupDraft: HostGroup? = nil
     @State private var isNew: Bool = false
@@ -180,6 +181,13 @@ struct HostsSectionView: View {
         .onAppear { openPendingEditHostIfNeeded() }
         .onChange(of: hostSelection.pendingEditHostID) { _ in openPendingEditHostIfNeeded() }
         .sheet(isPresented: $showImporter) { ImportHostsView() }
+        // ⌘F jumps to the quick-connect / filter bar (same shortcut muscle
+        // memory as Finder and the file viewer).
+        .background {
+            Button("") { quickConnectFocused = true }
+                .keyboardShortcut("f", modifiers: .command)
+                .hidden()
+        }
     }
 
     private func openPendingEditHostIfNeeded() {
@@ -234,6 +242,7 @@ struct HostsSectionView: View {
         HStack(spacing: 8) {
             TextField(loc(.h_quick_connect_placeholder), text: $quickConnect)
                 .textFieldStyle(.plain)
+                .focused($quickConnectFocused)
                 .onSubmit { quickConnectGo() }
             if !quickConnect.isEmpty {
                 Button { quickConnect = "" } label: {

@@ -44,6 +44,12 @@ struct SSHConnectionView: View {
             }
             .onAppear { focusPasswordIfNeeded() }
             .onChange(of: model.stage) { _ in focusPasswordIfNeeded() }
+            // A wrong password: clear the field and put the caret back so the
+            // user can retype immediately instead of hunting for the box.
+            .onChange(of: model.passwordAttempts) { _ in
+                model.passwordField = ""
+                focusPasswordIfNeeded()
+            }
         } else {
             Color.clear.allowsHitTesting(false)
         }
@@ -175,7 +181,10 @@ struct SSHConnectionView: View {
         case .needsHostKey(let info):
             hostKeySection(info)
         case .connecting:
-            Text("Connecting…").font(.callout).foregroundStyle(.secondaryText)
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text("Connecting…").font(.callout).foregroundStyle(.secondaryText)
+            }
         case .failed(let f):
             VStack(spacing: 6) {
                 Text(f.title).font(.subheadline.weight(.semibold)).foregroundStyle(.red)

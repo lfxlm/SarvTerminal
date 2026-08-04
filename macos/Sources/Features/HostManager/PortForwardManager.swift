@@ -101,6 +101,11 @@ final class PortForwardManager: ObservableObject {
         for id in Array(tunnels.keys) { stop(id) }
     }
 
+    /// Start every stopped rule (skips ones already running).
+    func startAll(_ forwards: [PortForward]) {
+        for f in forwards where tunnels[f.id] == nil { start(f) }
+    }
+
     // MARK: - Exit handling
 
     private func tunnelDidExit(_ id: UUID, status: Int32, stderr: String) {

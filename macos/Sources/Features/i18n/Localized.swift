@@ -98,6 +98,13 @@ enum LocalizedKey: String, CaseIterable {
     case data_load_failed
     case empty_folder
     case stop_broadcasting_tip
+    case run_in_focused_terminal
+    case run_in_specific_terminal
+    case executed_in_focused
+    case pf_filter_all
+    case pf_filter_running
+    case pf_filter_stopped
+    case pf_filter_failed
 
     // ── Settings ────────────────────────────────────────
     case auto_save
@@ -798,6 +805,13 @@ private let enStrings: [LocalizedKey: String] = [
     .data_load_failed: "Saved data couldn't be read (it may be corrupt). Sync stays paused so it isn't overwritten.",
     .empty_folder: "This folder is empty",
     .stop_broadcasting_tip: "Broadcasting to %ld panes — click to stop",
+    .run_in_focused_terminal: "Run in focused terminal",
+    .run_in_specific_terminal: "Run in a specific terminal",
+    .executed_in_focused: "Executed in focused terminal",
+    .pf_filter_all: "All",
+    .pf_filter_running: "Running",
+    .pf_filter_stopped: "Stopped",
+    .pf_filter_failed: "Failed",
 
     // ── Settings ────────────────────────────────────────
     .auto_save: "Auto-save",
@@ -1483,6 +1497,13 @@ private let zhStrings: [LocalizedKey: String] = [
     .data_load_failed: "无法读取已保存的数据（可能已损坏）。同步已暂停，避免被覆盖。",
     .empty_folder: "此文件夹为空",
     .stop_broadcasting_tip: "正在广播到 %ld 个分屏 — 点击停止",
+    .run_in_focused_terminal: "在焦点终端中运行",
+    .run_in_specific_terminal: "在指定终端中运行",
+    .executed_in_focused: "已在焦点终端中执行",
+    .pf_filter_all: "全部",
+    .pf_filter_running: "运行中",
+    .pf_filter_stopped: "已停止",
+    .pf_filter_failed: "失败",
 
     // ── Settings ────────────────────────────────────────
     .auto_save: "自动保存",

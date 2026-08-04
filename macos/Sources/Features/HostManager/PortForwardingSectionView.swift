@@ -11,14 +11,54 @@ struct PortForwardingSectionView: View {
     @State private var draft: PortForward?
     @State private var isNew = false
 
-    private var filtered: [PortForward] {
-        SearchMatcher.filter(store.forwards, query: search) { [$0.displayName, $0.route] }
+    /// Run-state filter for the list.
+    enum StatusFilter: String, CaseIterable, Identifiable {
+        case all, running, stopped, failed
+        var id: String { rawValue }
+        var label: String {
+            switch self {
+            case .all:      return loc(.pf_filter_all)
+            case .running:  return loc(.pf_filter_running)
+            case .stopped:  return loc(.pf_filter_stopped)
+            case .failed:   return loc(.pf_filter_failed)
+            }
+        }
     }
+    @State private var statusFilter: StatusFilter = .all
+
+    private var filtered: [PortForward] {
+        let searched = SearchMatcher.filter(store.forwards, query: search) { [$0.displayName, $0.route] }
+        switch statusFilter {
+        case .all:
+            return searched
+        case .running:
+            return searched.filter { manager.isRunning($0.id) }
+        case .stopped:
+            return searched.filter { !manager.isRunning($0.id) && manager.errors[$0.id] == nil }
+        case .failed:
+            return searched.filter { manager.errors[$0.id] != nil }
+        }
+    }
+
+    private var runningCount: Int { store.forwards.filter { manager.isRunning($0.id) }.count }
+    private var hasStopped: Bool { store.forwards.contains { !manager.isRunning($0.id) } }
 
     var body: some View {
         VStack(spacing: 0) {
             VaultsToolbar(
-                primary: .init(title: "New forwarding", icon: "plus") { startNew() })
+                primary: .init(title: "New forwarding", icon: "plus") { startNew() },
+                actions: [
+                    .init(title: runningCount > 0 ? "Stop all" : "Start all",
+                          icon: runningCount > 0 ? "stop.circle" : "play.circle",
+                          disabled: store.forwards.isEmpty,
+                          help: runningCount > 0 ? "Stop all running tunnels" : "Start every stopped tunnel") {
+                        if runningCount > 0 {
+                            manager.stopAll()
+                        } else {
+                            manager.startAll(store.forwards)
+                        }
+                    }
+                ])
             Divider()
 
             if store.loadFailed { VaultsLoadErrorBanner() }
@@ -56,13 +96,40 @@ struct PortForwardingSectionView: View {
     }
 
     private var searchBar: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "magnifyingglass").foregroundStyle(.secondaryText)
-            TextField("Search tunnels", text: $search).textFieldStyle(.plain)
-            Spacer()
-            Text("\(filtered.count) of \(store.forwards.count)").font(.caption).foregroundStyle(.secondaryText)
+        VStack(spacing: 0) {
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass").foregroundStyle(.secondaryText)
+                TextField("Search tunnels", text: $search).textFieldStyle(.plain)
+                Spacer()
+                Text("\(filtered.count) of \(store.forwards.count)").font(.caption).foregroundStyle(.secondaryText)
+            }
+            .padding(.horizontal, 16).padding(.vertical, 8)
+            Divider()
+            // Run-state filter chips.
+            HStack(spacing: 6) {
+                ForEach(StatusFilter.allCases) { filter in
+                    filterChip(filter)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 16).padding(.vertical, 6)
         }
-        .padding(.horizontal, 16).padding(.vertical, 8)
+    }
+
+    private func filterChip(_ filter: StatusFilter) -> some View {
+        let isOn = statusFilter == filter
+        return Button {
+            withAnimation(.easeOut(duration: 0.12)) { statusFilter = filter }
+        } label: {
+            Text(filter.label)
+                .font(.system(size: 11, weight: .medium))
+                .padding(.horizontal, 10).padding(.vertical, 3)
+                .background(Capsule().fill(isOn ? Color.accentColor.opacity(0.18) : Color.clear))
+                .overlay(Capsule().strokeBorder(isOn ? Color.accentColor.opacity(0.6) : Color.secondary.opacity(0.2)))
+                .foregroundStyle(isOn ? Color.accentColor : .secondaryText)
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
     }
 
     private var list: some View {
@@ -195,10 +262,36 @@ private struct PortForwardEditorView: View {
     let onCancel: () -> Void
 
     private var hostValid: Bool { hosts.contains { $0.id == forward.hostID } }
+    private func validPort(_ p: Int) -> Bool { p >= 1 && p <= 65535 }
+    private var bindAddressValid: Bool {
+        let b = forward.bindAddress.trimmingCharacters(in: .whitespaces)
+        return !b.isEmpty
+    }
+    private var destinationValid: Bool {
+        !forward.kind.needsDestination
+            || (!forward.destinationHost.trimmingCharacters(in: .whitespaces).isEmpty
+                && validPort(forward.destinationPort))
+    }
     private var canSave: Bool {
-        hostValid && forward.listenPort > 0
-            && (!forward.kind.needsDestination
-                || (!forward.destinationHost.trimmingCharacters(in: .whitespaces).isEmpty && forward.destinationPort > 0))
+        hostValid
+            && validPort(forward.listenPort)
+            && bindAddressValid
+            && destinationValid
+    }
+
+    /// First invalid field, for the inline error line under the form.
+    private var validationError: String? {
+        if !hostValid { return "Pick the host this tunnel runs over." }
+        if !validPort(forward.listenPort) { return "Listen port must be between 1 and 65535." }
+        if !bindAddressValid { return "Enter a bind address." }
+        if forward.kind.needsDestination,
+           forward.destinationHost.trimmingCharacters(in: .whitespaces).isEmpty {
+            return "Enter a destination host."
+        }
+        if forward.kind.needsDestination, !validPort(forward.destinationPort) {
+            return "Destination port must be between 1 and 65535."
+        }
+        return nil
     }
 
     var body: some View {
@@ -254,6 +347,13 @@ private struct PortForwardEditorView: View {
             } else {
                 Text("A SOCKS proxy will listen on \(forward.bindAddress):\(forward.listenPort). Point your browser/app's SOCKS5 proxy there.")
                     .font(.caption).foregroundStyle(.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if let validationError {
+                Text(validationError)
+                    .font(.caption)
+                    .foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
             }
 

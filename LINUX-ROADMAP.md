@@ -1902,6 +1902,39 @@ Explicitly **do not** port this as a second `GtkWindow` layered over the main on
 
 **Verify on Linux.** Navigate to an empty remote dir → "This folder is empty" appears below `..`. Navigate to a large/slow dir → the stale rows dim with a spinner until the new listing lands.
 
+## 39. Command palette defaults to the first matching host (not quick-connect)
+
+**What it is.** When the palette query matches a saved/discovered host, the keyboard highlight now lands on the FIRST matching host row instead of the quick-connect row. Previously typing "prod" and pressing Enter ran a bare `ssh prod` (the quick-connect path) even when a saved "prod" host existed — a mis-connect risk. Quick-connect is still reachable with one arrow-up, and is still the default when nothing matches.
+
+**Logic (platform-agnostic).** On every search change, if the query is non-empty, scan the rendered rows for the first row whose section is "hosts" and set the highlight index there; otherwise keep 0. The Enter handler is unchanged — it just confirms whichever row is highlighted, and `.savedHost` goes through the guided/staged flow while `.quickConnect` runs the bare command.
+
+**macOS→Linux.** The GTK palette keeps its row list + highlight index; the same "default to first host-section row on non-empty query" rule applies. No platform APIs involved.
+
+**Verify on Linux.** Save a host "prod"; type "prod" in the palette → the saved "prod" row is highlighted (not the quick-connect row); Enter connects it via the guided flow. Type gibberish → quick-connect is highlighted again.
+
+## 40. Port forwarding: validation, run-state filter, start/stop all
+
+**What it is.**
+- **Validation.** The editor now rejects out-of-range ports (must be 1–65535, previously `> 0` accepted 99999), an empty bind address, or an empty destination host, showing an inline orange message explaining the first problem.
+- **Run-state filter.** Chip filters above the list (All / Running / Stopped / Failed) combine with text search.
+- **Start/Stop all.** A toolbar button starts every stopped tunnel or stops every running one (uses the manager's existing `stopAll()` plus a new `startAll(_:)`).
+
+**Logic (platform-agnostic).** Validation is pure predicate logic on the draft fields (`validPort`, non-empty bind/dest). The filter applies the run-set membership (`running`) and error table (`errors`) on top of the text match. Start-all iterates the saved rules and launches each one not already in the tunnel table.
+
+**macOS→Linux.** Same predicates and filter logic; the process manager already exposes running/error state, so the GTK port just renders chips and the start/stop-all buttons against the same tables.
+
+**Verify on Linux.** Try to save a tunnel with listen port 99999 → Save disabled + inline message. Add rules, start a couple, then use the filters to see only Running/Stopped/Failed. "Start all" brings up every stopped rule; "Stop all" tears them all down.
+
+## 41. Snippets: one-click run in the focused terminal
+
+**What it is.** The snippet row's play control is now split: a green **play** button runs the snippet in the FOCUSED terminal with one click (no submenu), and a separate chevron menu still targets a SPECIFIC terminal (Execute in / Paste to). Previously running a snippet always required opening a two-level menu.
+
+**Logic (platform-agnostic).** The run path pastes the command and submits it with a real Enter (bracketed-paste safety requires the real Enter), targeting the active/most-recent terminal's focused pane (or every broadcast target when broadcasting). The play button is disabled when no terminal is open.
+
+**macOS→Linux.** Same send-text-then-enter mechanism exists in libghostty (`sendText` + a synthetic Enter key event); the GTK sidebar just needs the two-button split in its snippet rows.
+
+**Verify on Linux.** With a terminal focused, click a snippet's play button → the command runs in it immediately. Open several terminals and use the chevron menu to target a specific one; with no terminal open the play button is disabled.
+
 ## Appendix A. Visual design reference
 
 This appendix documents the concrete visual specification of the macOS "Vaults" host-manager surfaces so a GTK/Adwaita implementation can match the look. Values are extracted verbatim from the SwiftUI source under `macos/Sources/Features/HostManager/`. Where a value is not present in source, it is marked **"not specified in source."**

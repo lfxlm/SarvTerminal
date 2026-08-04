@@ -84,6 +84,7 @@ struct SnippetsSectionView: View {
                         snippet: snippet,
                         terminals: tabs.terminals,
                         onSend: { id, execute in send(snippet, toTabID: id, execute: execute) },
+                        onRunFocused: { runFocused(snippet) },
                         onCopy: { copy(snippet) },
                         onEdit: { edit(snippet) },
                         onDelete: {
@@ -132,6 +133,14 @@ struct SnippetsSectionView: View {
         }
     }
 
+    /// Run the snippet in the FOCUSED pane of the active (or most recent)
+    /// terminal — one click, no submenu.
+    private func runFocused(_ s: Snippet) {
+        if tabs.runInTargetTerminal(s.command) {
+            showToast(loc(.executed_in_focused))
+        }
+    }
+
     private func copy(_ s: Snippet) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(s.command, forType: .string)
@@ -150,6 +159,7 @@ private struct SnippetRow: View {
     let snippet: Snippet
     let terminals: [VaultsTabsModel.TerminalTab]
     let onSend: (UUID, Bool) -> Void   // (tab id, execute)
+    let onRunFocused: () -> Void       // run in the focused terminal, one click
     let onCopy: () -> Void
     let onEdit: () -> Void
     let onDelete: () -> Void
@@ -175,7 +185,7 @@ private struct SnippetRow: View {
                 Button(role: .destructive, action: onDelete) { Image(systemName: "trash") }
                     .buttonStyle(.borderless).foregroundStyle(.red).help("Delete snippet")
             }
-            runMenu
+            runControls
         }
         .padding(.horizontal, 16).padding(.vertical, 9)
         .contentShape(Rectangle())
@@ -189,29 +199,42 @@ private struct SnippetRow: View {
         }
     }
 
-    /// Play button → pick a terminal (nested submenus keep it compact even with
-    /// many terminals open) and whether to execute or just paste.
-    private var runMenu: some View {
-        Menu {
-            if terminals.isEmpty {
-                Text("No open terminals")
-            } else {
-                Menu("Execute in") {
-                    ForEach(terminals) { tab in
-                        Button(tab.displayName) { onSend(tab.id, true) }
-                    }
-                }
-                Menu("Paste to") {
-                    ForEach(terminals) { tab in
-                        Button(tab.displayName) { onSend(tab.id, false) }
-                    }
-                }
+    /// One-click play runs in the focused terminal; the chevron menu targets a
+    /// SPECIFIC terminal (Execute in / Paste to submenus keep it compact).
+    private var runControls: some View {
+        HStack(spacing: 4) {
+            Button(action: onRunFocused) {
+                Image(systemName: "play.circle.fill").font(.system(size: 16))
             }
-        } label: {
-            Image(systemName: "play.circle.fill").font(.system(size: 16))
+            .buttonStyle(.borderless)
+            .foregroundStyle(terminals.isEmpty ? Color.gray : Color.green)
+            .disabled(terminals.isEmpty)
+            .help(loc(.run_in_focused_terminal))
+            .hoverTipText(loc(.run_in_focused_terminal))
+
+            Menu {
+                if terminals.isEmpty {
+                    Text("No open terminals")
+                } else {
+                    Menu("Execute in") {
+                        ForEach(terminals) { tab in
+                            Button(tab.displayName) { onSend(tab.id, true) }
+                        }
+                    }
+                    Menu("Paste to") {
+                        ForEach(terminals) { tab in
+                            Button(tab.displayName) { onSend(tab.id, false) }
+                        }
+                    }
+                }
+            } label: {
+                Image(systemName: "chevron.down.circle").font(.system(size: 13))
+                    .foregroundStyle(.secondaryText)
+            }
+            .menuStyle(.borderlessButton).menuIndicator(.hidden)
+            .help(loc(.run_in_specific_terminal))
+            .disabled(terminals.isEmpty)
         }
-        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-        .help("Run snippet")
     }
 }
 

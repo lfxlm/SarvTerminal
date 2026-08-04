@@ -52,7 +52,7 @@ final class HostSearchModel: ObservableObject {
     @Published var hosts: [DiscoveredHost] = []
     /// The user's saved Vaults hosts (managed in the Hosts dashboard).
     @Published var savedHosts: [SavedHost] = []
-    @Published var search: String = "" { didSet { highlightIndex = 0 } }
+    @Published var search: String = "" { didSet { defaultHighlight() } }
     @Published var highlightIndex: Int = 0
     /// Bumped by the controller each time the palette is shown, to pull keyboard
     /// focus into the search field. The panel is a reused singleton, so SwiftUI's
@@ -172,6 +172,19 @@ final class HostSearchModel: ObservableObject {
         let n = rows.count
         guard n > 0 else { return }
         highlightIndex = (highlightIndex + delta + n) % n
+    }
+
+    /// When the query matches a saved/discovered host, the FIRST matching host
+    /// row gets the keyboard highlight — pressing Enter on "prod" must connect
+    /// the saved "prod" host, not run a bare `ssh prod`. Quick-connect stays
+    /// reachable (one arrow up) when no host matches.
+    private func defaultHighlight() {
+        guard !search.trimmingCharacters(in: .whitespaces).isEmpty else {
+            highlightIndex = 0
+            return
+        }
+        let all = rows
+        highlightIndex = all.firstIndex(where: { $0.section == .hosts }) ?? 0
     }
 
     func confirmSelection() -> PaletteRow? {

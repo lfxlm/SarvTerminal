@@ -1585,6 +1585,12 @@ final class VaultsTabsModel: ObservableObject {
         }
     }
 
+    /// Stop broadcasting in the given tab (one-click exit from the badge).
+    func stopBroadcast(in tabID: UUID) {
+        guard let tab = terminals.first(where: { $0.id == tabID }) else { return }
+        tab.broadcastTargets.removeAll()
+    }
+
     /// Whether the given pane is a broadcast target in its tab.
     func isPaneBroadcastTarget(_ pane: Ghostty.SurfaceView) -> Bool {
         tab(containing: pane)?.broadcastTargets.contains(pane.id) ?? false

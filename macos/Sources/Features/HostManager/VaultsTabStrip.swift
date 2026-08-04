@@ -100,11 +100,32 @@ struct VaultsTabStrip: View {
             if tabContentWidth > tabViewportWidth + 1 {
                 tabScrollButtons
             }
+            // Persistent broadcast warning: typing in the active tab is being
+            // mirrored to N panes. High-risk, so it's a red pill with a one-click
+            // exit instead of a tiny green dot hidden in a pane header.
+            if let activeTab = tabs.activeTerminal, activeTab.isBroadcasting {
+                Button { tabs.stopBroadcast(in: activeTab.id) } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "megaphone.fill")
+                            .font(.system(size: 9, weight: .bold))
+                        Text("\(activeTab.broadcastTargets.count)")
+                            .font(.system(size: 10, weight: .semibold))
+                    }
+                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    .background(Capsule().fill(Color.red.opacity(0.88)))
+                    .foregroundStyle(.white)
+                    .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .help(loc(.stop_broadcasting_tip, activeTab.broadcastTargets.count))
+                .transition(.opacity.combined(with: .scale(scale: 0.9)))
+            }
             newTabButton
         }
         .padding(.leading, 8)
         .padding(.trailing, 4)
         .padding(.vertical, 4)
+        .animation(.easeOut(duration: 0.15), value: tabs.activeTerminal?.isBroadcasting ?? false)
         // Centered-logo SarvAlert with input — same dialog semantics as
         // everywhere else in the app.
         .onChange(of: renamingTab?.id) { _ in

@@ -95,6 +95,9 @@ enum LocalizedKey: String, CaseIterable {
     case retry_transfer_tip
     case cancel_all
     case cancel_all_transfers_tip
+    case data_load_failed
+    case empty_folder
+    case stop_broadcasting_tip
 
     // ── Settings ────────────────────────────────────────
     case auto_save
@@ -792,6 +795,9 @@ private let enStrings: [LocalizedKey: String] = [
     .retry_transfer_tip: "Retry transfer",
     .cancel_all: "Cancel all",
     .cancel_all_transfers_tip: "Cancel all in-flight transfers",
+    .data_load_failed: "Saved data couldn't be read (it may be corrupt). Sync stays paused so it isn't overwritten.",
+    .empty_folder: "This folder is empty",
+    .stop_broadcasting_tip: "Broadcasting to %ld panes — click to stop",
 
     // ── Settings ────────────────────────────────────────
     .auto_save: "Auto-save",
@@ -1474,6 +1480,9 @@ private let zhStrings: [LocalizedKey: String] = [
     .retry_transfer_tip: "重试传输",
     .cancel_all: "取消全部",
     .cancel_all_transfers_tip: "取消所有进行中的传输",
+    .data_load_failed: "无法读取已保存的数据（可能已损坏）。同步已暂停，避免被覆盖。",
+    .empty_folder: "此文件夹为空",
+    .stop_broadcasting_tip: "正在广播到 %ld 个分屏 — 点击停止",
 
     // ── Settings ────────────────────────────────────────
     .auto_save: "自动保存",

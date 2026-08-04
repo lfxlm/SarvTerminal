@@ -26,6 +26,8 @@ struct SnippetsSectionView: View {
                 }])
             Divider()
 
+            if store.loadFailed { VaultsLoadErrorBanner() }
+
             if store.snippets.isEmpty {
                 VaultsEmptyState(
                     icon: "curlybraces",

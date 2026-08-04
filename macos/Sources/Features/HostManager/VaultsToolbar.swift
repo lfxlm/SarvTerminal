@@ -126,6 +126,26 @@ struct VaultsEmptyState: View {
     }
 }
 
+/// Orange warning banner shown at the top of a section whose local data failed
+/// to load/decode — a corrupt or unreadable file must not look like an empty
+/// vault. Shared by every data-backed Vaults section.
+struct VaultsLoadErrorBanner: View {
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+                .frame(width: 14)
+            Text(loc(.data_load_failed))
+                .font(.caption)
+                .foregroundStyle(.secondaryText)
+                .lineLimit(2)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 12).padding(.vertical, 6)
+        .background(Color.orange.opacity(0.10))
+    }
+}
+
 /// A section that is just the shared toolbar + an empty state — used by the
 /// not-yet-built Vaults sections so they share the exact same top bar.
 struct VaultsScaffoldSection: View {

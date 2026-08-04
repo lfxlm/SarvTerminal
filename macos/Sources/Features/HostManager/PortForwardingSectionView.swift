@@ -21,6 +21,8 @@ struct PortForwardingSectionView: View {
                 primary: .init(title: "New forwarding", icon: "plus") { startNew() })
             Divider()
 
+            if store.loadFailed { VaultsLoadErrorBanner() }
+
             if store.forwards.isEmpty {
                 VaultsEmptyState(
                     icon: "arrow.left.arrow.right",

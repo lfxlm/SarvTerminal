@@ -1871,6 +1871,36 @@ Explicitly **do not** port this as a second `GtkWindow` layered over the main on
 
 **Verify on Linux.** Start a slow connect → spinner shows. Connect to an "Ask"-password host with a wrong password → field clears and focus is already in it for the next try. Ctrl+F on the hosts page focuses the search bar.
 
+## 36. Broadcast input: persistent global warning with one-click exit
+
+**What it is.** Input-broadcast (mirroring keystrokes to N panes) is a high-risk mode — a stray `rm -rf` or a `y` sent to "yes" prompts lands on every target server. Previously the only indicator was a small green dot in each pane header. Now, whenever the ACTIVE terminal is broadcasting, the tab strip shows a red **megaphone + count** pill (e.g. ⚠ 3) with a tooltip "Broadcasting to N panes — click to stop"; clicking it clears the broadcast target set in one click. The pill animates in/out as broadcast starts/stops or the user switches tabs.
+
+**Logic (platform-agnostic).** The tab's broadcast target set is `@Published`; `isBroadcasting = !targets.isEmpty`. The strip renders the pill when the active tab's set is non-empty; the exit action simply empties the set (input is only ever mirrored while the set is non-empty, so clearing it is the stop condition). Persistence is not needed — broadcast is per-session by design.
+
+**macOS→Linux.** Same state machine: the GTK tab strip (`GtkBox`/notebook) shows a red capsule when the active pane-set is non-empty; click empties the set. The "megaphone + count" pill is a `GtkButton` with a `GtkLabel` + icon, styled via CSS. The stop action is the same `targets.clear()` the toggle paths already use.
+
+**Verify on Linux.** Split a tab, enable broadcast on 2+ panes → red pill with the count appears on the strip; typing reaches the targets. Click the pill → pill disappears and typing no longer mirrors. Switching to a non-broadcasting tab hides the pill; switching back shows it.
+
+## 37. Data-load-failure visibility (Snippets / Port Forwarding / Saved Sessions / Hosts)
+
+**What it is.** When a store's local file exists but is unreadable/undecryptable, the stores set `loadFailed` — but every section view simply showed an EMPTY list, so a sync/corruption problem looked exactly like "no data yet". Now the four data-backed sections (Snippets, Port Forwarding, Saved Sessions, and the Hosts dashboard) show an orange `VaultsLoadErrorBanner` at the top whenever `store.loadFailed` is true: "Saved data couldn't be read (it may be corrupt). Sync stays paused so it isn't overwritten."
+
+**Logic (platform-agnostic).** The store already records the load outcome (`none`/`failed`/`loaded`/`migrated` → `loadFailed`). The UI change is purely additive: if `loadFailed`, render a warning banner above the empty-state/list. The message deliberately explains WHY it's empty and that sync is paused to avoid clobbering the unreadable file.
+
+**macOS→Linux.** A shared banner widget shown conditionally on the load-failed flag; the flag already exists in the port's store model. The text is static — no new plumbing.
+
+**Verify on Linux.** Corrupt/`chmod 000` the snippets (or any) data file, restart → the section shows the orange banner instead of a plain empty state. Restore the file → banner disappears.
+
+## 38. SFTP: empty-folder state and loading overlay
+
+**What it is.** Two blank-state gaps in the file browser: an empty directory showed nothing but the `..` row (or nothing at all), and while a directory was loading the pane kept showing the OLD listing with only a tiny toolbar spinner. Now an empty directory shows a centered "This folder is empty" note, and during loads a dimming overlay + spinner sits over the stale rows so it's clear the pane is fetching.
+
+**Logic (platform-agnostic).** If `displayItems.isEmpty` (after filtering), render the empty note below the `..` row. While `isLoading`, dim the list area and show a spinner on top; the old items remain visible underneath only as context, not as a final state.
+
+**macOS→Linux.** Pure view-layer: a `GtkBox` empty label + a `GtkSpinner`/overlay driven by the model's `isLoading`. No backend changes.
+
+**Verify on Linux.** Navigate to an empty remote dir → "This folder is empty" appears below `..`. Navigate to a large/slow dir → the stale rows dim with a spinner until the new listing lands.
+
 ## Appendix A. Visual design reference
 
 This appendix documents the concrete visual specification of the macOS "Vaults" host-manager surfaces so a GTK/Adwaita implementation can match the look. Values are extracted verbatim from the SwiftUI source under `macos/Sources/Features/HostManager/`. Where a value is not present in source, it is marked **"not specified in source."**

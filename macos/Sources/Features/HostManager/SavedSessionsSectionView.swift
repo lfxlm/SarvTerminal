@@ -20,6 +20,8 @@ struct SavedSessionsSectionView: View {
             header
             Divider()
 
+            if store.loadFailed { VaultsLoadErrorBanner() }
+
             if store.sessions.isEmpty {
                 VaultsEmptyState(
                     icon: "rectangle.split.2x2",

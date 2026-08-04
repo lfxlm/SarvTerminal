@@ -249,9 +249,13 @@ struct FilePaneView: View {
                     parentRow
                     Divider().opacity(0.4)
                 }
-                ForEach(model.displayItems) { item in
-                    row(item)
-                    Divider().opacity(0.4)
+                if model.displayItems.isEmpty {
+                    emptyDirectoryView
+                } else {
+                    ForEach(model.displayItems) { item in
+                        row(item)
+                        Divider().opacity(0.4)
+                    }
                 }
             }
         }
@@ -259,6 +263,31 @@ struct FilePaneView: View {
             Button(loc(.new_folder)) { onAction(.newFolder) }
             Button(loc(.refresh)) { onAction(.refresh) }
         }
+        // While a directory loads, dim the (stale) rows so it's clear the pane
+        // is fetching, not showing the old listing as final.
+        .overlay {
+            if model.isLoading {
+                ZStack {
+                    Color(NSColor.windowBackgroundColor).opacity(0.30)
+                    ProgressView().controlSize(.small)
+                }
+                .allowsHitTesting(false)
+            }
+        }
+    }
+
+    /// Shown instead of a blank area when a directory has no visible items.
+    private var emptyDirectoryView: some View {
+        VStack(spacing: 6) {
+            Image(systemName: "tray")
+                .font(.system(size: 24))
+                .foregroundStyle(.tertiaryText)
+            Text(loc(.empty_folder))
+                .font(.caption)
+                .foregroundStyle(.secondaryText)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 30)
     }
 
     /// The ".." parent-folder row (double-click to go up).

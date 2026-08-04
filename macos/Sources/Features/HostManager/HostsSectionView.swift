@@ -204,6 +204,8 @@ struct HostsSectionView: View {
             quickConnectBar
             actionRow
             Divider()
+            // A corrupt/unreadable hosts file must not look like an empty vault.
+            if hostsStore.loadFailed { VaultsLoadErrorBanner() }
             if hostsStore.hosts.isEmpty && groupsStore.groups.isEmpty {
                 emptyState
             } else {

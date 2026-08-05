@@ -117,7 +117,10 @@ enum LocalizedKey: String, CaseIterable {
     case monitor_empty_hint
     case monitor_auto_refresh
     case host_status_help
-    case docker_permission_hint
+    case docker_permission_reason
+    case docker_not_installed_reason
+    case docker_daemon_down_reason
+    case docker_unknown_reason
 
     // ── Settings ────────────────────────────────────────
     case auto_save
@@ -834,10 +837,13 @@ private let enStrings: [LocalizedKey: String] = [
     .reconnect_choose_subtitle: "Pick what to run in this pane, or dismiss to close it.",
     .v_monitor: "Monitor",
     .monitor_placeholder: "Select a host",
-    .monitor_empty_hint: "Pick a saved SSH host to see its CPU, memory, disk, and GPU usage live.",
+    .monitor_empty_hint: "Connect to an SSH server (or pick a saved host) to see its CPU, memory, disk, and GPU usage live — no picker needed when you're already inside the server.",
     .monitor_auto_refresh: "Auto-refresh",
     .host_status_help: "%@ — click to re-check",
-    .docker_permission_hint: "The SSH user can't reach the Docker socket. On the server run: sudo usermod -aG docker $USER, then reconnect (or enable passwordless sudo for docker).",
+    .docker_permission_reason: "%@ — the SSH user can't reach the Docker daemon. On the server run: sudo usermod -aG docker $USER, then reconnect (or enable passwordless sudo for docker).",
+    .docker_not_installed_reason: "Docker isn't installed on %@. Install it (e.g. `sudo apt install docker.io` / `sudo dnf install docker`).",
+    .docker_daemon_down_reason: "The Docker daemon isn't running on %@. Start it (e.g. `sudo systemctl start docker`).",
+    .docker_unknown_reason: "Docker isn't available on %@.",
 
     // ── Settings ────────────────────────────────────────
     .auto_save: "Auto-save",
@@ -1539,10 +1545,13 @@ private let zhStrings: [LocalizedKey: String] = [
     .reconnect_choose_subtitle: "选择要在该分屏中运行的连接，或点关闭关闭分屏。",
     .v_monitor: "监控",
     .monitor_placeholder: "选择主机",
-    .monitor_empty_hint: "选择一台已保存的 SSH 主机，实时查看其 CPU、内存、磁盘与 GPU 使用情况。",
+    .monitor_empty_hint: "连接一台 SSH 服务器（或选择已保存的主机）即可实时查看其 CPU、内存、磁盘与 GPU 使用情况——已在服务器内时无需选择。",
     .monitor_auto_refresh: "自动刷新",
     .host_status_help: "%@ — 点击重新检测",
-    .docker_permission_hint: "SSH 用户无法访问 Docker socket。在服务器上运行：sudo usermod -aG docker $USER，然后重新连接（或为 docker 开启免密 sudo）。",
+    .docker_permission_reason: "%@ — SSH 用户无法访问 Docker daemon。请在服务器上运行：sudo usermod -aG docker $USER，然后重新连接（或为 docker 开启免密 sudo）。",
+    .docker_not_installed_reason: "%@ 上未安装 Docker。请安装（如 `sudo apt install docker.io` / `sudo dnf install docker`）。",
+    .docker_daemon_down_reason: "%@ 上的 Docker daemon 未运行。请启动（如 `sudo systemctl start docker`）。",
+    .docker_unknown_reason: "%@ 上无法使用 Docker。",
 
     // ── Settings ────────────────────────────────────────
     .auto_save: "自动保存",

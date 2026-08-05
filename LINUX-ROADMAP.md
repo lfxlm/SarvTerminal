@@ -2016,6 +2016,18 @@ Clicking confirms first ("Disconnect the current session to 'host' and open a fr
 
 **Verify on Linux.** A host with `ProxyJump` set shows green when the bastion is up (and its tooltip shows the bastion address), red when the bastion is down. The Monitor tab appears in the right sidebar and shows the same live metrics as the Vaults Monitor section.
 
+## 48. Auto-target the active SSH server; clearer docker failure reasons
+
+**What it is.** Two refinements to the remote panels (§45, §46):
+- **Auto-target the server you're in.** Monitor and Containers panels no longer require a host picker when the user is already inside an SSH session: they default to `auto` scope, resolving to `VaultsTabsModel.activeSSHHost` (the first connected SSH pane's saved host in the active tab). Switching to a different SSH tab re-queries automatically. The picker remains for an explicit override (a specific host, or the local Mac).
+- **Why docker can't show.** When `docker ps` fails, the panel now states the REASON with the fix, instead of a raw error: docker not installed, daemon not running, or "SSH user can't reach the Docker daemon — run `sudo usermod -aG docker $USER` and reconnect / enable passwordless sudo". Empty listing also names the host ("No running containers on X.").
+
+**Logic (platform-agnostic).** `activeSSHHost` scans the active tab's leaves for a connection whose model host is set and stage is `.connected`. The panels' scope is an enum (`auto` / `local` / `host`); `auto` resolves to `activeSSHHost` at query time, so no state to keep in sync. Docker errors are classified by stderr substrings (command-not-found / permission / daemon-down) and mapped to localized hints.
+
+**macOS→Linux.** The scope enum + auto-resolution and the stderr classification are portable; the GTK apprt just renders the picker as a combo and the reason text inline.
+
+**Verify on Linux.** Open an SSH tab, then the Monitor/Containers panels → they show THAT server with no selection. Switch to another SSH tab → they follow. Kill the docker daemon on the host → the panel says "daemon isn't running" with the start command; remove docker → "not installed"; run as a user without the docker group and no passwordless sudo → the permission reason + fix appears.
+
 ## Appendix A. Visual design reference
 
 This appendix documents the concrete visual specification of the macOS "Vaults" host-manager surfaces so a GTK/Adwaita implementation can match the look. Values are extracted verbatim from the SwiftUI source under `macos/Sources/Features/HostManager/`. Where a value is not present in source, it is marked **"not specified in source."**

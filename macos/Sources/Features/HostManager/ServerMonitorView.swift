@@ -125,7 +125,8 @@ struct ServerMetrics: Equatable {
 final class ServerMonitorModel: ObservableObject {
     static let shared = ServerMonitorModel()
 
-    /// Selected host id (nil = none selected).
+    /// Selected host id. nil = AUTO: follow the SSH server the user is
+    /// currently connected to (the focused terminal's session).
     @Published var hostID: UUID? = nil
     @Published private(set) var metrics = ServerMetrics()
     @Published private(set) var loading = false
@@ -133,6 +134,12 @@ final class ServerMonitorModel: ObservableObject {
     /// Auto-refresh the metrics every `interval` seconds while the pane is open.
     @Published var autoRefresh = true
     let interval: TimeInterval = 3
+
+    /// The host being monitored: the explicit pick, else the active SSH server.
+    var resolvedHost: SavedHost? {
+        if let id = hostID { return SavedHostsStore.shared.host(withID: id) }
+        return VaultsTabsModel.shared.activeSSHHost
+    }
 
     func selectHost(_ id: UUID?) {
         hostID = id
@@ -142,7 +149,7 @@ final class ServerMonitorModel: ObservableObject {
     }
 
     func refresh() {
-        guard let id = hostID, let host = SavedHostsStore.shared.host(withID: id) else {
+        guard let host = resolvedHost else {
             metrics = ServerMetrics()
             lastUpdated = nil
             return
@@ -163,6 +170,7 @@ final class ServerMonitorModel: ObservableObject {
 struct ServerMonitorView: View {
     @ObservedObject private var model = ServerMonitorModel.shared
     @ObservedObject private var hostsStore = SavedHostsStore.shared
+    @ObservedObject private var tabs = VaultsTabsModel.shared
 
     var body: some View {
         VStack(spacing: 0) {
@@ -170,7 +178,7 @@ struct ServerMonitorView: View {
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    if model.hostID == nil {
+                    if model.resolvedHost == nil {
                         emptyState
                     } else if let error = model.metrics.error {
                         VStack(spacing: 8) {
@@ -193,10 +201,14 @@ struct ServerMonitorView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onChange(of: model.hostID) { _ in model.refresh() }
+        // Auto mode follows the server the user is actually connected to.
+        .onChange(of: tabs.activeSSHHost?.id) { _ in
+            if model.hostID == nil { model.refresh() }
+        }
         .task {
             // Auto-refresh loop while the pane is visible.
             while !Task.isCancelled {
-                if model.autoRefresh, model.hostID != nil, !model.loading {
+                if model.autoRefresh, model.resolvedHost != nil, !model.loading {
                     model.refresh()
                 }
                 try? await Task.sleep(nanoseconds: UInt64(model.interval * 1_000_000_000))
@@ -207,8 +219,16 @@ struct ServerMonitorView: View {
     private var toolbar: some View {
         HStack(spacing: 8) {
             Menu {
-                Button { model.selectHost(nil) } label: { Label("Select a host…", systemImage: "questionmark") }
-                    .disabled(true)
+                // Auto: follow the server the user is connected to.
+                if let active = tabs.activeSSHHost {
+                    Button { model.selectHost(nil) } label: {
+                        Label("Current server: \(active.displayLabel)", systemImage: "bolt")
+                    }
+                } else {
+                    Button { model.selectHost(nil) } label: { Label("Select a host…", systemImage: "questionmark") }
+                        .disabled(true)
+                }
+                Divider()
                 ForEach(hostsStore.hosts) { host in
                     Button { model.selectHost(host.id) } label: {
                         if model.hostID == host.id {
@@ -257,8 +277,11 @@ struct ServerMonitorView: View {
     }
 
     private var monitorHostLabel: String {
-        guard let id = model.hostID else { return loc(.monitor_placeholder) }
-        return hostsStore.host(withID: id)?.displayLabel ?? loc(.monitor_placeholder)
+        if let id = model.hostID {
+            return hostsStore.host(withID: id)?.displayLabel ?? loc(.monitor_placeholder)
+        }
+        if let active = tabs.activeSSHHost { return active.displayLabel }
+        return loc(.monitor_placeholder)
     }
 
     private var emptyState: some View {

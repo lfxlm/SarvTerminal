@@ -61,7 +61,7 @@ enum ContainerAttachService {
     static func listDocker() async -> (items: [DockerContainer], error: String?) {
         let r = await run("docker ps --format '{{json .}}'")
         guard r.code == 0 else {
-            return ([], cleanError(r.err, fallback: "Docker isn't available."))
+            return ([], dockerUnavailableReason(stderr: r.err, needsSudo: false, hostLabel: "this Mac"))
         }
         return (parseDocker(r.out), nil)
     }
@@ -93,8 +93,7 @@ enum ContainerAttachService {
             r = await run(host: host, command: "sudo -n docker ps --format '{{json .}}'")
         }
         guard r.code == 0 else {
-            let base = cleanError(r.err, fallback: "Docker isn't available on \(host.displayLabel).")
-            return ([], needsSudo ? "\(base)\n\(loc(.docker_permission_hint))" : base, needsSudo)
+            return ([], dockerUnavailableReason(stderr: r.err, needsSudo: needsSudo, hostLabel: host.displayLabel), needsSudo)
         }
         return (parseDocker(r.out), nil, needsSudo)
     }
@@ -178,6 +177,28 @@ enum ContainerAttachService {
         return pods
     }
 
+    /// Human-readable reason docker can't list containers, with the fix hint —
+    /// shown inline in the panel so a failure is never a mystery.
+    static func dockerUnavailableReason(stderr: String, needsSudo: Bool, hostLabel: String) -> String {
+        let lower = stderr.lowercased()
+        if lower.contains("command not found") || lower.contains("no such file") {
+            return loc(.docker_not_installed_reason, hostLabel)
+        }
+        if lower.contains("permission denied")
+            || lower.contains("cannot connect to the docker daemon")
+            || lower.contains("a password is required")
+            || lower.contains("not in the sudoers") {
+            return loc(.docker_permission_reason, hostLabel)
+        }
+        if lower.contains("connection refused")
+            || lower.contains("is the docker daemon running")
+            || lower.contains("daemon not running") {
+            return loc(.docker_daemon_down_reason, hostLabel)
+        }
+        // Unknown — surface the raw ssh/docker error (cleaned), not a guess.
+        return cleanError(stderr, fallback: loc(.docker_unknown_reason, hostLabel))
+    }
+
     /// Absolute path of a CLI (docker/kubectl) as an interactive login shell
     /// would resolve it — needed because a directly-spawned process (Ghostty's
     /// `command`) doesn't inherit the Homebrew / /usr/local PATH.
@@ -235,14 +256,25 @@ enum ContainerAttachService {
 final class ContainerAttachModel: ObservableObject {
     static let shared = ContainerAttachModel()
 
+    /// Where to look for containers.
+    enum Scope: Equatable {
+        /// The SSH server the user is currently connected to; falls back to the
+        /// local Mac when no SSH session is focused. The default.
+        case auto
+        /// Explicitly the local Mac.
+        case local
+        /// A specific saved host.
+        case host(SavedHost)
+    }
+
     @Published private(set) var dockerContainers: [DockerContainer] = []
     @Published private(set) var pods: [K8sPod] = []
     @Published private(set) var dockerError: String?
     @Published private(set) var k8sError: String?
     @Published private(set) var loading = false
     @Published private(set) var loadedOnce = false
-    /// The SSH host to query. nil = the local Mac (original behavior).
-    @Published var selectedHost: SavedHost? = nil
+    /// Where to look for containers (defaults to the active SSH server).
+    @Published var scope: Scope = .auto
 
     /// Absolute binary paths (login-shell PATH), used for directly-spawned tabs.
     private var dockerPath: String?
@@ -250,9 +282,22 @@ final class ContainerAttachModel: ObservableObject {
     /// Whether sudo (`sudo -n`) was required to talk to docker on the remote host.
     private var dockerNeedsSudo = false
 
-    func selectHost(_ host: SavedHost?) {
-        guard selectedHost?.id != host?.id else { return }
-        selectedHost = host
+    /// The host to query, or nil for the local Mac.
+    var resolvedHost: SavedHost? {
+        switch scope {
+        case .auto:  return VaultsTabsModel.shared.activeSSHHost
+        case .local: return nil
+        case .host(let h): return h
+        }
+    }
+
+    func selectScope(_ scope: Scope) {
+        guard self.scope != scope else { return }
+        self.scope = scope
+        reset()
+    }
+
+    private func reset() {
         dockerContainers = []
         pods = []
         dockerError = nil
@@ -265,7 +310,7 @@ final class ContainerAttachModel: ObservableObject {
         guard !loading else { return }
         loading = true
         Task { @MainActor in
-            if let host = selectedHost {
+            if let host = resolvedHost {
                 let (docker, dErr, dSudo) = await ContainerAttachService.listDocker(host: host)
                 let (k8s, kErr) = await ContainerAttachService.listPods(host: host)
                 dockerContainers = docker
@@ -292,7 +337,7 @@ final class ContainerAttachModel: ObservableObject {
     }
 
     func attach(_ c: DockerContainer, target: AttachTarget) {
-        guard let host = selectedHost else {
+        guard let host = resolvedHost else {
             // Local Mac: new tab spawns the process directly, so it needs the
             // absolute path (docker isn't on Ghostty's minimal spawn PATH). The
             // current tab types into an interactive shell that has the full PATH.
@@ -311,7 +356,7 @@ final class ContainerAttachModel: ObservableObject {
     }
 
     func attach(_ pod: K8sPod, container: String?, target: AttachTarget) {
-        guard let host = selectedHost else {
+        guard let host = resolvedHost else {
             let binary = target == .newTab ? (kubectlPath ?? "kubectl") : "kubectl"
             open(ContainerAttachService.k8sAttachCommand(binary: binary, pod, container: container),
                  name: pod.name, target: target)
@@ -351,6 +396,7 @@ enum AttachTarget { case newTab, currentTab }
 struct ContainersTab: View {
     @ObservedObject private var model = ContainerAttachModel.shared
     @ObservedObject private var hostsStore = SavedHostsStore.shared
+    @ObservedObject private var tabs = VaultsTabsModel.shared
 
     var body: some View {
         VStack(spacing: 0) {
@@ -365,30 +411,61 @@ struct ContainersTab: View {
             }
         }
         .onAppear { if !model.loadedOnce { model.refresh() } }
+        // In auto scope, follow the server the user is actually connected to.
+        .onChange(of: tabs.activeSSHHost?.id) { _ in
+            if model.scope == .auto { model.refresh() }
+        }
+    }
+
+    /// What the header menu shows right now.
+    private var scopeLabel: String {
+        switch model.scope {
+        case .host(let h): return h.displayLabel
+        case .local:       return "Local Mac"
+        case .auto:
+            return tabs.activeSSHHost?.displayLabel ?? "Local Mac"
+        }
+    }
+    private var scopeIcon: String {
+        switch model.scope {
+        case .local: return "desktopcomputer"
+        case .auto:  return tabs.activeSSHHost == nil ? "desktopcomputer" : "server.rack"
+        case .host:  return "server.rack"
+        }
     }
 
     private var header: some View {
         HStack(spacing: 8) {
-            // Where to look for containers: the local Mac or an SSH server.
             Menu {
+                // Auto: the server you're connected to (or local).
+                if let active = tabs.activeSSHHost {
+                    Button {
+                        model.selectScope(.auto)
+                    } label: {
+                        Label("Current server: \(active.displayLabel)", systemImage: "bolt")
+                    }
+                }
                 Button {
-                    model.selectHost(nil)
+                    model.selectScope(.local)
                 } label: {
                     Label("Local Mac", systemImage: "desktopcomputer")
                 }
                 Divider()
                 ForEach(hostsStore.hosts) { host in
                     Button {
-                        model.selectHost(host)
+                        model.selectScope(.host(host))
                     } label: {
-                        Text(host.displayLabel)
+                        if case .host(let selected) = model.scope, selected.id == host.id {
+                            Label(host.displayLabel, systemImage: "checkmark")
+                        } else {
+                            Text(host.displayLabel)
+                        }
                     }
                 }
             } label: {
                 HStack(spacing: 5) {
-                    Image(systemName: model.selectedHost == nil ? "desktopcomputer" : "server.rack")
-                        .font(.system(size: 11))
-                    Text(model.selectedHost?.displayLabel ?? "Local Mac")
+                    Image(systemName: scopeIcon).font(.system(size: 11))
+                    Text(scopeLabel)
                         .font(.system(size: 11, weight: .medium))
                         .lineLimit(1)
                     Image(systemName: "chevron.down").font(.system(size: 8)).foregroundStyle(.secondaryText)
@@ -400,9 +477,7 @@ struct ContainersTab: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
-            .hoverTipText(model.selectedHost == nil
-                          ? "Show containers on this Mac"
-                          : "Show containers on \(model.selectedHost?.displayLabel ?? "")")
+            .hoverTipText("Where to look for containers")
 
             Spacer()
             Button { model.refresh() } label: {
@@ -428,7 +503,11 @@ struct ContainersTab: View {
             if let err = model.dockerError {
                 emptyNote(err)
             } else if model.dockerContainers.isEmpty {
-                emptyNote(model.loadedOnce ? "No running containers." : "Loading…")
+                emptyNote(model.loadedOnce
+                          ? (model.resolvedHost != nil
+                             ? "No running containers on \(model.resolvedHost!.displayLabel)."
+                             : "No running containers.")
+                          : "Loading…")
             } else {
                 ForEach(model.dockerContainers) { c in
                     row(title: c.name, subtitle: subtitle(c.image, c.status)) {

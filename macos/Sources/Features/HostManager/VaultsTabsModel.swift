@@ -1960,17 +1960,14 @@ final class VaultsTabsModel: ObservableObject {
 
     /// User-initiated close of a single pane (pane header ×, ⌘W).
     ///
-    /// In a SPLIT tab (more than one pane) this is TWO-STAGE so a stray click
-    /// can't kill a running session:
-    ///   1. First click "arms" the pane — it gets a red border and its ✕ turns
-    ///      red. Nothing closes yet.
-    ///   2. Clicking the same ✕ again:
-    ///        • SSH pane → it turns into an SSH connection chooser ("choose a
-    ///          new connection"): pick a host to connect it to that, or dismiss
-    ///          the chooser to actually close the pane.
-    ///        • Local pane → an explicit confirmation dialog; only confirming
-    ///          closes the pane. The dialog's Cancel disarms.
-    /// A single-pane tab keeps the old flow (prompt only when a process runs).
+    /// Only SSH panes in a SPLIT tab get the guarded three-stage flow, so a
+    /// stray click can't kill a remote session:
+    ///   1. First click "arms" the pane — red border + persistent red ✕.
+    ///   2. Clicking the same ✕ again disconnects the SSH session and turns the
+    ///      pane into a "choose a new connection" chooser.
+    ///   3. Dismissing the chooser (Dismiss / Esc) closes the pane directly.
+    /// Local (non-SSH) panes and single-pane tabs close immediately — they only
+    /// prompt when a process is actually running.
     @MainActor
     func requestClosePane(surface: Ghostty.SurfaceView) {
         let isSplit = (tab(containing: surface)?.surfaceTree.root?.leaves().count ?? 0) > 1
@@ -1982,20 +1979,22 @@ final class VaultsTabsModel: ObservableObject {
             ) { [weak self] in self?.performClosePane(surface: surface) }
             return
         }
-        if armedClosePaneID == surface.id {
-            // Second click — intentional.
-            armedClosePaneID = nil
-            if connections[surface.id]?.model.host != nil {
-                // SSH pane: don't just close — offer the connection chooser so
-                // the user can pick a new host, or dismiss to close the pane.
+        // SSH pane → three-stage close (arm → chooser → close).
+        if connections[surface.id]?.model.host != nil {
+            if armedClosePaneID == surface.id {
+                armedClosePaneID = nil
                 showCloseChooser(surface: surface)
             } else {
-                confirmPaneClose(surface)
+                armedClosePaneID = surface.id
             }
-        } else {
-            // First click — arm the pane for closing (visual selection).
-            armedClosePaneID = surface.id
+            return
         }
+        // Local pane → close directly (prompt only if a process is running).
+        confirmCloseIfRunning(
+            [surface],
+            title: "Close Terminal?",
+            message: "This terminal still has a running process. If you close it the process will be killed."
+        ) { [weak self] in self?.performClosePane(surface: surface) }
     }
 
     /// Turn a closed SSH pane into a fresh connection chooser: tear down the
@@ -2015,23 +2014,6 @@ final class VaultsTabsModel: ObservableObject {
         // The chooser overlay focuses its own search field — don't steal focus.
         awaitingChoice.insert(blank.id)
         replacingChooserIDs.insert(blank.id)
-    }
-
-    /// The explicit "really close this pane?" confirmation shown on the SECOND
-    /// ✕ click in a split tab. Always prompts — this is the second reminder.
-    @MainActor
-    private func confirmPaneClose(_ surface: Ghostty.SurfaceView) {
-        let name = paneDisplayTitle(for: surface)
-        SarvAlert.present(
-            title: "Close Terminal?",
-            message: "Close \u{201C}\(name)\u{201D}? Its running process will be terminated. This can't be undone.",
-            buttons: [
-                .init("Close", isDefault: true, isDestructive: true),
-                .init("Cancel", isCancel: true),
-            ]
-        ) { result in
-            if result.buttonIndex == 0 { self.performClosePane(surface: surface) }
-        }
     }
 
     /// User-initiated "Close Other Tabs".

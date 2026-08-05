@@ -1945,21 +1945,20 @@ Explicitly **do not** port this as a second `GtkWindow` layered over the main on
 
 **Verify on Linux.** With a terminal focused, click a snippet's play button → the command runs in it immediately. Open several terminals and use the chevron menu to target a specific one; with no terminal open the play button is disabled.
 
-## 42. Two-stage pane close in split view (arm → confirm / SSH → chooser)
+## 42. SSH pane close: arm → connection chooser → close (local panes close directly)
 
-**What it is.** In a SPLIT tab (more than one pane), closing a pane is now two-stage so a stray click on the wrong ✕ can't kill a running session:
-1. **First click** on a pane's ✕ (or ⌘W) only **arms** it: the pane gets a red border, its ✕ turns into a persistent red ✕, and a red "Click ✕ again to close" pill appears in the header. Nothing closes.
-2. **Second click** on the same ✕:
-   - **SSH pane** → it becomes an SSH connection **chooser** ("Choose a new connection"): the session is torn down, the pane is swapped for a fresh blank surface, and the split chooser opens over it. Picking a host connects that host in the pane; dismissing the chooser (`Dismiss` / Esc / the pane ✕) actually closes the pane.
-   - **Local pane** → an explicit confirmation dialog ("Close 'name'? Its running process will be terminated."); **Close** removes the pane, **Cancel** disarms it.
+**What it is.** In a SPLIT tab, ONLY an SSH pane gets the guarded three-stage close, so a stray ✕ click can't kill a remote session:
+1. **First click** on an SSH pane's ✕ (or ⌘W) only **arms** it: red border, persistent red ✕, and a red "Click ✕ again to close" pill in the header. Nothing closes.
+2. **Second click** disconnects the SSH session and turns the pane into a **"Choose a new connection"** chooser (the old surface is swapped for a fresh blank one — freeing it terminates ssh — and the split chooser opens over it).
+3. **Dismissing the chooser** (Dismiss / Esc) closes the pane **directly** — no further dialog.
 
-Switching tabs disarms. Single-pane tabs are unchanged (the old "prompt only when a process runs" flow). The focus-mode sidebar shows the same armed state; the focus-mode main pane shows the same SSH chooser.
+**Local (non-SSH) panes and single-pane tabs close immediately**, prompting only when a process is actually running (`needsConfirmQuit`). The focus-mode sidebar shows the same armed state; its main pane shows the same SSH chooser.
 
-**Logic (platform-agnostic).** A `@Published armedClosePaneID: UUID?` on the tab model. `requestClosePane` checks whether the tab has >1 leaf: if so, clicking the ✕ toggles arm/confirm (`armedClosePaneID == surface.id` → act; otherwise set it). For an SSH pane (`connections[id].model.host != nil`) the second click calls a "replace with chooser" routine instead of a dialog: `teardownConnection`, drop the sticky title, **swap the surface for a fresh blank `SurfaceView` at the same split node** (freeing the old surface terminates the ssh child), mark it `awaitingChoice` + `replacingChooserIDs`, and let the existing chooser/resolve path (pick host → `connectSavedHostInPane`; dismiss → `closePaneSkippingConfirm`) drive the rest. The armed id is cleared on pane close, on `selection` change, and before showing the chooser/dialog.
+**Logic (platform-agnostic).** `requestClosePane` checks (a) is the tab split (>1 leaf), (b) does `connections[id].model.host != nil`. Only when BOTH are true does it arm/then-convert: the armed id is `@Published armedClosePaneID: UUID?`; on the second click it calls `teardownConnection`, drops the sticky title, **swaps the surface for a fresh blank `SurfaceView` at the same split node** (freeing the old surface terminates ssh), marks it `awaitingChoice` + `replacingChooserIDs`, and lets the existing chooser resolve path (pick host → `connectSavedHostInPane`; dismiss → `closePaneSkippingConfirm`) drive the rest. The armed id clears on pane close, on `selection` change, and before showing the chooser. Local/single-pane closes skip all of this.
 
-**macOS→Linux.** Same state + toggle logic in the GTK apprt: a per-surface "armed" id, red CSS border when armed, a two-click close, a `GtkAlertDialog` for local panes, and — for SSH panes — a pane-replacement into a chooser. The chooser already exists for fresh splits; the only new bit is "on SSH close, swap the pane's surface for a blank one and show the chooser" (which the split-chooser resolve path already handles). Clearing rules are identical. No shared-core involvement.
+**macOS→Linux.** Same state + toggle logic in the GTK apprt: a per-surface "armed" id, red CSS border when armed, two-click close, and — for SSH panes — a pane-replacement into the existing split chooser. Local panes close directly. No shared-core involvement.
 
-**Verify on Linux.** Split a tab with a local shell; click ✕ twice → confirmation dialog; Close closes it, Cancel disarms. Split a tab with an SSH pane; click ✕ twice → the pane becomes a "Choose a new connection" chooser (old ssh process gone per `ps`); pick a host → it connects there; or Dismiss → the pane closes. ⌘W/Ctrl+W behaves the same. Switching tabs while a pane is armed disarms it.
+**Verify on Linux.** Split a tab with an SSH pane; click ✕ → red border, nothing closes; ✕ again → session drops and "Choose a new connection" appears (old ssh process gone per `ps`); Dismiss → pane closes. A local shell split pane closes on the first ✕ (with the running-process prompt only when busy). ⌘W/Ctrl+W behaves the same.
 
 ## 43. Manual SSH session reconnect
 

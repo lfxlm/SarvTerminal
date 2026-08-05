@@ -212,6 +212,16 @@ struct HostsSectionView: View {
                 contentArea
             }
         }
+        // Reachability dots: probe on appear, when the host list changes, and
+        // periodically re-check hosts that were offline (maybe they came back).
+        .onAppear { HostReachabilityStore.shared.refresh(hostsStore.hosts) }
+        .onChange(of: hostsStore.hosts) { HostReachabilityStore.shared.refresh($0) }
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 30_000_000_000)
+                HostReachabilityStore.shared.recheckOffline(hostsStore.hosts)
+            }
+        }
     }
 
     private var contentArea: some View {
@@ -1259,8 +1269,8 @@ private struct HostCard<MoveMenu: View>: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
-            // OS logo when known (manual pick or auto-detected), generic
-            // server glyph otherwise — shared with the list row.
+            // Reachability dot + OS-aware logo, shared with the list row.
+            HostStatusDot(host: host)
             HostOSIconView(host: host)
             VStack(alignment: .leading, spacing: 2) {
                 Text(host.displayLabel)
@@ -1343,7 +1353,8 @@ private struct HostListRow<MoveMenu: View>: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            // Same OS-aware icon as the grid card, row-sized.
+            // Same reachability dot + OS-aware icon as the grid card, row-sized.
+            HostStatusDot(host: host)
             HostOSIconView(host: host, side: 28)
             VStack(alignment: .leading, spacing: 2) {
                 Text(host.displayLabel).fontWeight(.medium)

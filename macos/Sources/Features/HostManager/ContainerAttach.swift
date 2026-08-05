@@ -63,19 +63,7 @@ enum ContainerAttachService {
         guard r.code == 0 else {
             return ([], cleanError(r.err, fallback: "Docker isn't available."))
         }
-        var out: [DockerContainer] = []
-        for line in r.out.split(separator: "\n") {
-            guard let data = line.data(using: .utf8),
-                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let id = obj["ID"] as? String, !id.isEmpty else { continue }
-            out.append(DockerContainer(
-                id: id,
-                name: (obj["Names"] as? String) ?? id,
-                image: (obj["Image"] as? String) ?? "",
-                status: (obj["Status"] as? String) ?? ""
-            ))
-        }
-        return (out, nil)
+        return (parseDocker(r.out), nil)
     }
 
     static func listPods() async -> (items: [K8sPod], error: String?) {
@@ -83,11 +71,95 @@ enum ContainerAttachService {
         guard r.code == 0 else {
             return ([], cleanError(r.err, fallback: "kubectl isn't available."))
         }
-        guard let data = r.out.data(using: .utf8),
-              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let items = root["items"] as? [[String: Any]] else {
-            return ([], "Couldn't parse kubectl output.")
+        return (parsePods(r.out), nil)
+    }
+
+    // MARK: Remote (over SSH to a saved host)
+
+    static func run(host: SavedHost, command: String) async -> (out: String, err: String, code: Int32) {
+        let res = await RemoteCommand.run(host: host, command: command)
+        return (res.stdout, res.stderr, res.status)
+    }
+
+    /// List containers ON the remote host. Runs as the saved SSH user — no root
+    /// required. If the user isn't in the docker group, retries with `sudo -n`
+    /// (passwordless sudo); if that also fails, reports the permission problem
+    /// with the fix hint.
+    static func listDocker(host: SavedHost) async -> (items: [DockerContainer], error: String?, needsSudo: Bool) {
+        var needsSudo = false
+        var r = await run(host: host, command: "docker ps --format '{{json .}}'")
+        if r.code != 0, RemoteCommand.isPermissionDenied(r.err) {
+            needsSudo = true
+            r = await run(host: host, command: "sudo -n docker ps --format '{{json .}}'")
         }
+        guard r.code == 0 else {
+            let base = cleanError(r.err, fallback: "Docker isn't available on \(host.displayLabel).")
+            return ([], needsSudo ? "\(base)\n\(loc(.docker_permission_hint))" : base, needsSudo)
+        }
+        return (parseDocker(r.out), nil, needsSudo)
+    }
+
+    static func listPods(host: SavedHost) async -> (items: [K8sPod], error: String?) {
+        let r = await run(host: host, command: "kubectl get pods --all-namespaces -o json")
+        guard r.code == 0 else {
+            return ([], cleanError(r.err, fallback: "kubectl isn't available on \(host.displayLabel)."))
+        }
+        return (parsePods(r.out), nil)
+    }
+
+    /// Full terminal command that attaches into a remote container — the process
+    /// of a new tab IS this command (`ssh -t host docker exec …`). All single
+    /// words, so Ghostty's whitespace command-splitting leaves it intact; `-t`
+    /// forces a remote tty so `docker exec -it` works.
+    static func remoteDockerAttachCommand(host: SavedHost, needsSudo: Bool, _ c: DockerContainer) -> String {
+        let sudo = needsSudo ? "sudo -n " : ""
+        let opts = RemoteCommand.sshOptions(for: host).joined(separator: " ")
+        return "ssh \(opts) -t \(RemoteCommand.target(host)) \(sudo)docker exec -it \(c.name) sh"
+    }
+
+    static func remoteK8sAttachCommand(host: SavedHost, _ pod: K8sPod, container: String?) -> String {
+        let opts = RemoteCommand.sshOptions(for: host).joined(separator: " ")
+        var cmd = "ssh \(opts) -t \(RemoteCommand.target(host)) kubectl exec -it -n \(pod.namespace) \(pod.name)"
+        if let container, !container.isEmpty { cmd += " -c \(container)" }
+        cmd += " -- sh"
+        return cmd
+    }
+
+    /// The bare docker/kubectl command typed into an ALREADY-connected terminal
+    /// ("run in current tab" while the user is on the host).
+    static func dockerAttachTyped(needsSudo: Bool, _ c: DockerContainer) -> String {
+        "\(needsSudo ? "sudo -n " : "")docker exec -it \(c.name) sh"
+    }
+
+    static func k8sAttachTyped(_ pod: K8sPod, container: String?) -> String {
+        var cmd = "kubectl exec -it -n \(pod.namespace) \(pod.name)"
+        if let container, !container.isEmpty { cmd += " -c \(container)" }
+        cmd += " -- sh"
+        return cmd
+    }
+
+    // MARK: Parsing (shared local/remote)
+
+    private static func parseDocker(_ out: String) -> [DockerContainer] {
+        var result: [DockerContainer] = []
+        for line in out.split(separator: "\n") {
+            guard let data = line.data(using: .utf8),
+                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let id = obj["ID"] as? String, !id.isEmpty else { continue }
+            result.append(DockerContainer(
+                id: id,
+                name: (obj["Names"] as? String) ?? id,
+                image: (obj["Image"] as? String) ?? "",
+                status: (obj["Status"] as? String) ?? ""
+            ))
+        }
+        return result
+    }
+
+    private static func parsePods(_ out: String) -> [K8sPod] {
+        guard let data = out.data(using: .utf8),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let items = root["items"] as? [[String: Any]] else { return [] }
         var pods: [K8sPod] = []
         for item in items {
             let meta = item["metadata"] as? [String: Any]
@@ -103,7 +175,7 @@ enum ContainerAttachService {
                 containers: containers
             ))
         }
-        return (pods, nil)
+        return pods
     }
 
     /// Absolute path of a CLI (docker/kubectl) as an interactive login shell
@@ -169,44 +241,89 @@ final class ContainerAttachModel: ObservableObject {
     @Published private(set) var k8sError: String?
     @Published private(set) var loading = false
     @Published private(set) var loadedOnce = false
+    /// The SSH host to query. nil = the local Mac (original behavior).
+    @Published var selectedHost: SavedHost? = nil
 
     /// Absolute binary paths (login-shell PATH), used for directly-spawned tabs.
     private var dockerPath: String?
     private var kubectlPath: String?
+    /// Whether sudo (`sudo -n`) was required to talk to docker on the remote host.
+    private var dockerNeedsSudo = false
+
+    func selectHost(_ host: SavedHost?) {
+        guard selectedHost?.id != host?.id else { return }
+        selectedHost = host
+        dockerContainers = []
+        pods = []
+        dockerError = nil
+        k8sError = nil
+        dockerNeedsSudo = false
+        refresh()
+    }
 
     func refresh() {
         guard !loading else { return }
         loading = true
         Task { @MainActor in
-            async let dockerResult = ContainerAttachService.listDocker()
-            async let podResult = ContainerAttachService.listPods()
-            async let dockerBin = ContainerAttachService.resolve("docker")
-            async let kubectlBin = ContainerAttachService.resolve("kubectl")
-            let (docker, k8s, dPath, kPath) = await (dockerResult, podResult, dockerBin, kubectlBin)
-
-            dockerContainers = docker.items
-            dockerError = docker.error
-            pods = k8s.items
-            k8sError = k8s.error
-            dockerPath = dPath
-            kubectlPath = kPath
+            if let host = selectedHost {
+                let (docker, dErr, dSudo) = await ContainerAttachService.listDocker(host: host)
+                let (k8s, kErr) = await ContainerAttachService.listPods(host: host)
+                dockerContainers = docker
+                dockerError = dErr
+                dockerNeedsSudo = dSudo
+                pods = k8s
+                k8sError = kErr
+            } else {
+                async let dockerResult = ContainerAttachService.listDocker()
+                async let podResult = ContainerAttachService.listPods()
+                async let dockerBin = ContainerAttachService.resolve("docker")
+                async let kubectlBin = ContainerAttachService.resolve("kubectl")
+                let (docker, k8s, dPath, kPath) = await (dockerResult, podResult, dockerBin, kubectlBin)
+                dockerContainers = docker.items
+                dockerError = docker.error
+                pods = k8s.items
+                k8sError = k8s.error
+                dockerPath = dPath
+                kubectlPath = kPath
+            }
             loading = false
             loadedOnce = true
         }
     }
 
     func attach(_ c: DockerContainer, target: AttachTarget) {
-        // New tab spawns the process directly, so it needs the absolute path
-        // (docker isn't on Ghostty's minimal spawn PATH). The current tab types
-        // into an interactive shell that already has the full PATH.
-        let binary = target == .newTab ? (dockerPath ?? "docker") : "docker"
-        open(ContainerAttachService.dockerAttachCommand(binary: binary, c), name: c.name, target: target)
+        guard let host = selectedHost else {
+            // Local Mac: new tab spawns the process directly, so it needs the
+            // absolute path (docker isn't on Ghostty's minimal spawn PATH). The
+            // current tab types into an interactive shell that has the full PATH.
+            let binary = target == .newTab ? (dockerPath ?? "docker") : "docker"
+            open(ContainerAttachService.dockerAttachCommand(binary: binary, c), name: c.name, target: target)
+            return
+        }
+        switch target {
+        case .newTab:
+            open(ContainerAttachService.remoteDockerAttachCommand(host: host, needsSudo: dockerNeedsSudo, c),
+                 name: c.name, target: target)
+        case .currentTab:
+            open(ContainerAttachService.dockerAttachTyped(needsSudo: dockerNeedsSudo, c),
+                 name: c.name, target: target)
+        }
     }
 
     func attach(_ pod: K8sPod, container: String?, target: AttachTarget) {
-        let binary = target == .newTab ? (kubectlPath ?? "kubectl") : "kubectl"
-        open(ContainerAttachService.k8sAttachCommand(binary: binary, pod, container: container),
-             name: pod.name, target: target)
+        guard let host = selectedHost else {
+            let binary = target == .newTab ? (kubectlPath ?? "kubectl") : "kubectl"
+            open(ContainerAttachService.k8sAttachCommand(binary: binary, pod, container: container),
+                 name: pod.name, target: target)
+            return
+        }
+        switch target {
+        case .newTab:
+            open(ContainerAttachService.remoteK8sAttachCommand(host: host, pod, container: container),
+                 name: pod.name, target: target)
+        case .currentTab:
+            open(ContainerAttachService.k8sAttachTyped(pod, container: container), name: pod.name, target: target)
+        }
     }
 
     /// Whether a "current tab" target exists right now (drives the menu item).
@@ -233,6 +350,7 @@ enum AttachTarget { case newTab, currentTab }
 /// add another top-bar icon.
 struct ContainersTab: View {
     @ObservedObject private var model = ContainerAttachModel.shared
+    @ObservedObject private var hostsStore = SavedHostsStore.shared
 
     var body: some View {
         VStack(spacing: 0) {
@@ -251,7 +369,41 @@ struct ContainersTab: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Text("Attach a shell").font(.system(size: 11)).foregroundStyle(.secondary)
+            // Where to look for containers: the local Mac or an SSH server.
+            Menu {
+                Button {
+                    model.selectHost(nil)
+                } label: {
+                    Label("Local Mac", systemImage: "desktopcomputer")
+                }
+                Divider()
+                ForEach(hostsStore.hosts) { host in
+                    Button {
+                        model.selectHost(host)
+                    } label: {
+                        Text(host.displayLabel)
+                    }
+                }
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: model.selectedHost == nil ? "desktopcomputer" : "server.rack")
+                        .font(.system(size: 11))
+                    Text(model.selectedHost?.displayLabel ?? "Local Mac")
+                        .font(.system(size: 11, weight: .medium))
+                        .lineLimit(1)
+                    Image(systemName: "chevron.down").font(.system(size: 8)).foregroundStyle(.secondaryText)
+                }
+                .padding(.horizontal, 8).padding(.vertical, 4)
+                .background(RoundedRectangle(cornerRadius: 6).fill(Color.secondary.opacity(0.12)))
+                .contentShape(Rectangle())
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .hoverTipText(model.selectedHost == nil
+                          ? "Show containers on this Mac"
+                          : "Show containers on \(model.selectedHost?.displayLabel ?? "")")
+
             Spacer()
             Button { model.refresh() } label: {
                 if model.loading {

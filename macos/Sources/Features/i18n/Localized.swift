@@ -112,6 +112,12 @@ enum LocalizedKey: String, CaseIterable {
     case reconnect
     case reconnect_choose_title
     case reconnect_choose_subtitle
+    case v_monitor
+    case monitor_placeholder
+    case monitor_empty_hint
+    case monitor_auto_refresh
+    case host_status_help
+    case docker_permission_hint
 
     // ── Settings ────────────────────────────────────────
     case auto_save
@@ -826,6 +832,12 @@ private let enStrings: [LocalizedKey: String] = [
     .reconnect: "Reconnect",
     .reconnect_choose_title: "Choose a new connection",
     .reconnect_choose_subtitle: "Pick what to run in this pane, or dismiss to close it.",
+    .v_monitor: "Monitor",
+    .monitor_placeholder: "Select a host",
+    .monitor_empty_hint: "Pick a saved SSH host to see its CPU, memory, disk, and GPU usage live.",
+    .monitor_auto_refresh: "Auto-refresh",
+    .host_status_help: "%@ — click to re-check",
+    .docker_permission_hint: "The SSH user can't reach the Docker socket. On the server run: sudo usermod -aG docker $USER, then reconnect (or enable passwordless sudo for docker).",
 
     // ── Settings ────────────────────────────────────────
     .auto_save: "Auto-save",
@@ -1525,6 +1537,12 @@ private let zhStrings: [LocalizedKey: String] = [
     .reconnect: "重新连接",
     .reconnect_choose_title: "选择新的连接",
     .reconnect_choose_subtitle: "选择要在该分屏中运行的连接，或点关闭关闭分屏。",
+    .v_monitor: "监控",
+    .monitor_placeholder: "选择主机",
+    .monitor_empty_hint: "选择一台已保存的 SSH 主机，实时查看其 CPU、内存、磁盘与 GPU 使用情况。",
+    .monitor_auto_refresh: "自动刷新",
+    .host_status_help: "%@ — 点击重新检测",
+    .docker_permission_hint: "SSH 用户无法访问 Docker socket。在服务器上运行：sudo usermod -aG docker $USER，然后重新连接（或为 docker 开启免密 sudo）。",
 
     // ── Settings ────────────────────────────────────────
     .auto_save: "自动保存",

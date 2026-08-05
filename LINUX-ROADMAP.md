@@ -1969,6 +1969,39 @@ Clicking confirms first ("Disconnect the current session to 'host' and open a fr
 
 **Verify on Linux.** Connect to a host, right-click the terminal → "Reconnect SSH Session"; confirm → a fresh ssh session replaces the old one in place (a `ps` before/after shows the old ssh pid gone). Same from the tab menu. A local shell pane shows no Reconnect item.
 
+## 44. Host reachability dots in the Vaults host list
+
+**What it is.** Every saved host card/list row now shows a small status dot: **green** = TCP-reachable, **red** = offline, **orange** = probing, **gray** = not checked yet. Tapping a dot re-probes that host. Dots appear on load and periodically re-check hosts that were offline (every 30s), so a recovered server flips green on its own.
+
+**Logic (platform-agnostic).** A `HostReachabilityStore` caches a status per host id. A probe is a quick TCP connect to `host:port` with a 2s bound — pure network logic, no SSH handshake (so a dead host reports offline fast). `refresh` probes only unknown/checking hosts; `recheckOffline` probes only offline ones; a forced probe re-checks everything. The view is a dot whose color maps the enum.
+
+**macOS→Linux.** Same store + probe (the GTK host list renders a `GtkImage`/drawing dot). The probe is a `connect()` on a non-blocking socket with `poll()` timeout, or a `nc -z` child — the equivalent on Linux is identical (`nc` has `-w` instead of `-G`). No shared-core involvement.
+
+**Verify on Linux.** A reachable host shows green; `systemctl stop sshd` (or a wrong port) shows red; stop→start sshd and within ~30s the dot flips back to green without user action.
+
+## 45. Docker / Kubernetes Attach queries the SSH server (no root needed)
+
+**What it is.** The "Attach a shell" panel previously listed containers on the LOCAL Mac — useless for SSH workflows. It now has a **host selector** at the top (Local Mac / any saved SSH host) and lists the selected host's Docker containers and K8s pods **over SSH**. No root login is required: the panel runs `docker ps` as the saved SSH user, and if that user isn't in the `docker` group it retries with `sudo -n` (passwordless sudo); when that also fails it shows the fix hint ("add the user to the docker group, or enable passwordless sudo"). Attaching opens a tab whose process IS `ssh -t host docker exec -it <name> sh` (new tab) or types the same command into the current terminal.
+
+**Logic (platform-agnostic).**
+- A `RemoteCommand` runner builds the ssh argv from the saved host's options (port, identity, `-J`, agent, ConnectTimeout) plus the askpass env for a saved password, runs one ssh round-trip, and cleans up the askpass temp file.
+- Listing: `docker ps --format '{{json .}}'` (resp. `kubectl get pods -o json`). On a permission-denied stderr (`permission denied`, `cannot connect to the docker daemon`, sudo errors) retry with `sudo -n …`; remember whether sudo was needed and reuse the same prefix for the attach command.
+- Attach "new tab" is a whitespace-only command string (Ghostty splits on spaces, no quoting): `ssh <opts> -t user@host [sudo -n] docker exec -it <name> sh`. `-t` forces the remote tty so `-it` works.
+
+**macOS→Linux.** The ssh argv builder, JSON parsing, and the permission→`sudo -n` fallback are all portable; the GTK apprt needs the same host picker + panel. `RemoteFileBackend.runProcess`'s cancellation-aware process runner is apprt-agnostic (a `GSubprocess` + `kill()` on cancel maps to it).
+
+**Verify on Linux.** Pick an SSH host in the panel → its containers/pods list (no terminal needed). SSH user with docker-group access lists directly; without it, either the `sudo -n` fallback works or the fix hint appears. Attach opens an interactive shell inside the chosen container via a fresh ssh tab.
+
+## 46. Server Monitor section (CPU / memory / disk / GPU)
+
+**What it is.** A new Vaults sidebar section (**Monitor**) shows live resource usage for a selected saved SSH host: CPU% (with load average + core count), memory used/total, disk used/total for `/`, and an NVIDIA GPU card (name, VRAM used/total, utilization %, temperature) when present — the standard metric set found in cloud consoles / Termius-style host stats / htop+`nvtop`. Includes a host picker, a refresh button, and an **auto-refresh** toggle (default on, ~3s).
+
+**Logic (platform-agnostic).** One ssh round-trip runs a small POSIX shell script that prints labeled `KEY:value` lines: hostname, OS, uptime, load, cores, CPU% (`top -bn1`, `100 - idle`), memory (`free -m`), disk (`df -h /`), and GPU (`nvidia-smi --query-gpu=… --format=csv,noheader,nounits`). The service parses the lines into a `ServerMetrics` struct; the view renders progress bars for CPU/mem/disk and a GPU card. `nvidia-smi` failing is not an error — GPU section simply shows "No NVIDIA GPU detected".
+
+**macOS→Linux.** The script is POSIX and the ssh runner is shared with §45; the GTK section is a `GtkBox` of bars driven by the same parse. Consider making the interval configurable in settings later.
+
+**Verify on Linux.** Select a host → bars and values update; toggle auto-refresh off to freeze; run a CPU loop (`yes >/dev/null &`) and watch CPU% climb. On an NVIDIA host, the GPU card shows VRAM/util/temp; on a host without one it shows the "no GPU" note.
+
 ## Appendix A. Visual design reference
 
 This appendix documents the concrete visual specification of the macOS "Vaults" host-manager surfaces so a GTK/Adwaita implementation can match the look. Values are extracted verbatim from the SwiftUI source under `macos/Sources/Features/HostManager/`. Where a value is not present in source, it is marked **"not specified in source."**

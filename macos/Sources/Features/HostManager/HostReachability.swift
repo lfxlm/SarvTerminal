@@ -47,13 +47,37 @@ final class HostReachabilityStore: ObservableObject {
         inFlight.insert(host.id)
         statuses[host.id] = .checking
         let id = host.id
-        let hostname = host.hostname
-        let port = UInt16(max(1, min(host.port, 65535)))
+        // A jump-host target is usually NOT directly reachable — probe the JUMP
+        // host instead, otherwise every behind-a-bastion host shows red wrongly.
+        let target = Self.probeTarget(for: host)
         Task { @MainActor in
-            let ok = await Self.tcpReachable(host: hostname, port: port)
+            let ok = await Self.tcpReachable(host: target.host, port: target.port)
             self.inFlight.remove(id)
             self.statuses[id] = ok ? .online : .offline
         }
+    }
+
+    /// Where to probe for `host`: its own hostname:port, or — when it routes
+    /// through a `proxyJump` bastion — the bastion's host:port.
+    static func probeTarget(for host: SavedHost) -> (host: String, port: UInt16) {
+        if !host.proxyJump.isEmpty {
+            let jump = parseJumpHost(host.proxyJump)
+            if !jump.host.isEmpty { return (jump.host, jump.port) }
+        }
+        return (host.hostname, UInt16(max(1, min(host.port, 65535))))
+    }
+
+    /// Parse `user@host[:port]` / `host[:port]` into host + port (default 22).
+    static func parseJumpHost(_ jump: String) -> (host: String, port: UInt16) {
+        var s = jump
+        if let at = s.lastIndex(of: "@") { s = String(s[s.index(after: at)...]) }
+        if let colon = s.lastIndex(of: ":"), colon > s.startIndex {
+            let host = String(s[..<colon])
+            if let p = UInt16(s[s.index(after: colon)...]), !host.isEmpty {
+                return (host, p)
+            }
+        }
+        return (s, 22)
     }
 
     /// Quick TCP reachability via `nc -z` (ships with macOS). `-G 2` bounds the
@@ -94,8 +118,19 @@ struct HostStatusDot: View {
                 .overlay(Circle().strokeBorder(Color.white.opacity(0.25), lineWidth: 0.5))
         }
         .buttonStyle(.plain)
-        .help(loc(.host_status_help, host.displayLabel))
+        .help(helpText)
         .hoverCursor(.pointingHand)
+    }
+
+    private var helpText: String {
+        let target: String
+        if !host.proxyJump.isEmpty {
+            let jump = HostReachabilityStore.parseJumpHost(host.proxyJump)
+            target = "via \(jump.host):\(jump.port)"
+        } else {
+            target = "\(host.hostname):\(host.port)"
+        }
+        return loc(.host_status_help, "\(host.displayLabel) (\(target))")
     }
 
     private var color: Color {

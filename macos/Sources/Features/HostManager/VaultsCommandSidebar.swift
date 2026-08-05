@@ -7,13 +7,14 @@ import AppKit
 /// Run/Paste into the active terminal via VaultsTabsModel. No new business logic.
 struct VaultsCommandSidebar: View {
     enum Tab: String, CaseIterable, Identifiable {
-        case snippets, history, containers, theme
+        case snippets, history, containers, monitor, theme
         var id: String { rawValue }
         var icon: String {
             switch self {
             case .snippets:   return "curlybraces"
             case .history:    return "clock"
             case .containers: return "shippingbox"
+            case .monitor:    return "cpu"
             case .theme:      return "paintpalette"
             }
         }
@@ -22,6 +23,7 @@ struct VaultsCommandSidebar: View {
             case .snippets:   return "Snippets"
             case .history:    return "Shell history"
             case .containers: return "Attach (Docker / K8s)"
+            case .monitor:    return "Server monitor"
             case .theme:      return "Themes & font"
             }
         }
@@ -38,6 +40,7 @@ struct VaultsCommandSidebar: View {
                 case .snippets:   SnippetsTab()
                 case .history:    HistoryTab()
                 case .containers: ContainersTab()
+                case .monitor:    ServerMonitorView()
                 case .theme:      ThemeTab()
                 }
             }

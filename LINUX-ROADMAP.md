@@ -2003,6 +2003,18 @@ Clicking confirms first ("Disconnect the current session to 'host' and open a fr
 
 **Verify on Linux.** Select a host → bars and values update; toggle auto-refresh off to freeze; run a CPU loop (`yes >/dev/null &`) and watch CPU% climb. On an NVIDIA host, the GPU card shows VRAM/util/temp; on a host without one it shows the "no GPU" note.
 
+## 47. Refinements: jump-host reachability + monitor in the command sidebar
+
+**What it is.** Two follow-ups to the remote-server features (§44, §46):
+- **Jump-host reachability.** Hosts that route through a `proxyJump` bastion used to probe their OWN hostname:port with `nc`, so every behind-a-bastion host wrongly showed a red (offline) dot. The probe now targets the **jump host's** host:port instead (parsed from the `proxyJump` string `user@host[:port]`), and the dot's tooltip reads "via <jump-host:port>". Green now means "the bastion you'd route through is up" — which is what determines practical reachability.
+- **Monitor in the command sidebar.** The right command sidebar (Snippets / History / Docker-K8s Attach / Themes) gains a **Monitor** tab (`cpu` icon) rendering the same `ServerMonitorView` (shared model, so host selection + metrics are shared with the Vaults Monitor section). Docker/K8s Attach was already a sidebar tab.
+
+**Logic (platform-agnostic).** Jump parsing is pure string logic (`strip user@`, optional `:port`, default 22); the probe itself is unchanged. The monitor view is reused as-is — the sidebar is just another mount point.
+
+**macOS→Linux.** Same parse + probe; the GTK command sidebar is a `GtkStack`/`GtkNotebook` page hosting the same monitor widget.
+
+**Verify on Linux.** A host with `ProxyJump` set shows green when the bastion is up (and its tooltip shows the bastion address), red when the bastion is down. The Monitor tab appears in the right sidebar and shows the same live metrics as the Vaults Monitor section.
+
 ## Appendix A. Visual design reference
 
 This appendix documents the concrete visual specification of the macOS "Vaults" host-manager surfaces so a GTK/Adwaita implementation can match the look. Values are extracted verbatim from the SwiftUI source under `macos/Sources/Features/HostManager/`. Where a value is not present in source, it is marked **"not specified in source."**

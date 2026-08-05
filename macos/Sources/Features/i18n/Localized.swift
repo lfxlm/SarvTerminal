@@ -110,6 +110,8 @@ enum LocalizedKey: String, CaseIterable {
     case reconnect_ssh
     case reconnect_ssh_confirm_message
     case reconnect
+    case reconnect_choose_title
+    case reconnect_choose_subtitle
 
     // ── Settings ────────────────────────────────────────
     case auto_save
@@ -822,6 +824,8 @@ private let enStrings: [LocalizedKey: String] = [
     .reconnect_ssh: "Reconnect SSH Session",
     .reconnect_ssh_confirm_message: "Disconnect the current session to \"%@\" and open a fresh one?",
     .reconnect: "Reconnect",
+    .reconnect_choose_title: "Choose a new connection",
+    .reconnect_choose_subtitle: "Pick what to run in this pane, or dismiss to close it.",
 
     // ── Settings ────────────────────────────────────────
     .auto_save: "Auto-save",
@@ -1519,6 +1523,8 @@ private let zhStrings: [LocalizedKey: String] = [
     .reconnect_ssh: "重新连接 SSH",
     .reconnect_ssh_confirm_message: "断开到“%@”的当前会话并建立新连接？",
     .reconnect: "重新连接",
+    .reconnect_choose_title: "选择新的连接",
+    .reconnect_choose_subtitle: "选择要在该分屏中运行的连接，或点关闭关闭分屏。",
 
     // ── Settings ────────────────────────────────────────
     .auto_save: "自动保存",

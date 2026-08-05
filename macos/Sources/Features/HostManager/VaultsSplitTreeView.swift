@@ -194,7 +194,12 @@ private struct VaultsSplitLeaf: View {
                             onDismiss: { onDismiss(surfaceView) },
                             onDropTab: { draggedID in
                                 VaultsTabsModel.shared.injectTabIntoAwaiting(awaiting: surfaceView, draggedTabID: draggedID)
-                            }
+                            },
+                            // Replaced an SSH pane → say "choose a new connection".
+                            title: tabs.replacingChooserIDs.contains(surfaceView.id)
+                                ? loc(.reconnect_choose_title) : nil,
+                            subtitle: tabs.replacingChooserIDs.contains(surfaceView.id)
+                                ? loc(.reconnect_choose_subtitle) : nil
                         )
                     }
                 }
@@ -381,6 +386,10 @@ struct SplitChooserView: View {
     let onDismiss: () -> Void
     /// A tab chip (public.text = its UUID) was dropped onto this empty split.
     let onDropTab: (UUID) -> Void
+    /// Optional custom heading — the "replaced an SSH pane" chooser uses a
+    /// "Choose a new connection" title instead of the default split text.
+    var title: String? = nil
+    var subtitle: String? = nil
 
     @StateObject private var model = HostSearchModel()
     @FocusState private var searchFocused: Bool
@@ -406,9 +415,9 @@ struct SplitChooserView: View {
                             Image(systemName: "rectangle.split.2x1")
                                 .font(.system(size: 26, weight: .light))
                                 .foregroundStyle(.secondaryText)
-                            Text(loc(.sp_open_in_split))
+                            Text(title ?? loc(.sp_open_in_split))
                                 .font(.headline)
-                            Text(loc(.sp_pick_hint))
+                            Text(subtitle ?? loc(.sp_pick_hint))
                                 .font(.caption)
                                 .foregroundStyle(.secondaryText)
                         }

@@ -228,6 +228,10 @@ final class VaultsTabsModel: ObservableObject {
     /// disarms. This two-stage guard prevents accidental pane closes in split
     /// view, where a stray click on the wrong ✕ used to kill a running session.
     @Published private(set) var armedClosePaneID: UUID?
+    /// Surface IDs of chooser panes that REPLACED a closed SSH pane (vs a fresh
+    /// split) — the chooser gets a "choose a new connection" title and the user
+    /// picks a new host there or dismisses to close the pane.
+    @Published private(set) var replacingChooserIDs: Set<UUID> = []
     /// Show the "all tabs" overview grid.
     @Published var showAllTabs: Bool = false
     /// Left-edge scratchpad panel visibility (toggled by the top-bar button,
@@ -1280,12 +1284,12 @@ final class VaultsTabsModel: ObservableObject {
         let knownPassword = host.password.isEmpty ? nil : host.password
 
         awaitingChoice.remove(surface.id)
+        replacingChooserIDs.remove(surface.id)
 
         let boundSurface: Ghostty.SurfaceView
         var passwordFile: String?
         var jumpPasswordFile: String?
-        if needsPassword {
-            // Keep the placeholder surface; the popup collects the password.
+        if needsPassword {            // Keep the placeholder surface; the popup collects the password.
             boundSurface = surface
         } else {
             // Swap the placeholder pane for a live ssh surface.
@@ -1320,6 +1324,7 @@ final class VaultsTabsModel: ObservableObject {
     /// Terminal choice).
     func dismissChoice(surface: Ghostty.SurfaceView) {
         awaitingChoice.remove(surface.id)
+        replacingChooserIDs.remove(surface.id)
         Ghostty.moveFocus(to: surface)
     }
 
@@ -1449,6 +1454,7 @@ final class VaultsTabsModel: ObservableObject {
               let node = tab.surfaceTree.root?.node(view: surface) else { return }
         if armedClosePaneID == surface.id { armedClosePaneID = nil }
         awaitingChoice.remove(surface.id)
+        replacingChooserIDs.remove(surface.id)
         teardownConnection(surfaceID: surface.id)   // drop this pane's SSH popup, if any
         let remaining = tab.surfaceTree.removing(node)
         if remaining.isEmpty {
@@ -1894,9 +1900,12 @@ final class VaultsTabsModel: ObservableObject {
     /// can't kill a running session:
     ///   1. First click "arms" the pane — it gets a red border and its ✕ turns
     ///      red. Nothing closes yet.
-    ///   2. Clicking the same ✕ again (or pressing ⌘W again) shows an explicit
-    ///      confirmation dialog; only confirming actually closes the pane.
-    ///      The dialog's Cancel disarms.
+    ///   2. Clicking the same ✕ again:
+    ///        • SSH pane → it turns into an SSH connection chooser ("choose a
+    ///          new connection"): pick a host to connect it to that, or dismiss
+    ///          the chooser to actually close the pane.
+    ///        • Local pane → an explicit confirmation dialog; only confirming
+    ///          closes the pane. The dialog's Cancel disarms.
     /// A single-pane tab keeps the old flow (prompt only when a process runs).
     @MainActor
     func requestClosePane(surface: Ghostty.SurfaceView) {
@@ -1910,13 +1919,38 @@ final class VaultsTabsModel: ObservableObject {
             return
         }
         if armedClosePaneID == surface.id {
-            // Second click — intentional. Confirm, then close.
+            // Second click — intentional.
             armedClosePaneID = nil
-            confirmPaneClose(surface)
+            if connections[surface.id]?.model.host != nil {
+                // SSH pane: don't just close — offer the connection chooser so
+                // the user can pick a new host, or dismiss to close the pane.
+                showCloseChooser(surface: surface)
+            } else {
+                confirmPaneClose(surface)
+            }
         } else {
             // First click — arm the pane for closing (visual selection).
             armedClosePaneID = surface.id
         }
+    }
+
+    /// Turn a closed SSH pane into a fresh connection chooser: tear down the
+    /// session, swap the pane for a blank surface (freeing the old one — which
+    /// terminates ssh), and show the chooser. Picking a host connects it here;
+    /// dismissing the chooser closes the pane.
+    @MainActor
+    private func showCloseChooser(surface: Ghostty.SurfaceView) {
+        guard let tab = tab(containing: surface),
+              let node = tab.surfaceTree.root?.node(view: surface),
+              let app = (NSApp.delegate as? AppDelegate)?.ghostty.app else { return }
+        teardownConnection(surfaceID: surface.id)
+        tab.paneTitleOverrides[surface.id] = nil
+        let blank = Ghostty.SurfaceView(app)
+        guard let newTree = try? tab.surfaceTree.replacing(node: node, with: .leaf(view: blank)) else { return }
+        tab.surfaceTree = newTree
+        // The chooser overlay focuses its own search field — don't steal focus.
+        awaitingChoice.insert(blank.id)
+        replacingChooserIDs.insert(blank.id)
     }
 
     /// The explicit "really close this pane?" confirmation shown on the SECOND

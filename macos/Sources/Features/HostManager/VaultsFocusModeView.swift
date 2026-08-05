@@ -125,7 +125,12 @@ struct VaultsFocusModeView: View {
                             onDismiss: { tabs.closePaneSkippingConfirm(surface: surface) },
                             onDropTab: { draggedID in
                                 tabs.injectTabIntoAwaiting(awaiting: surface, draggedTabID: draggedID)
-                            }
+                            },
+                            // Replaced an SSH pane → say "choose a new connection".
+                            title: tabs.replacingChooserIDs.contains(surface.id)
+                                ? loc(.reconnect_choose_title) : nil,
+                            subtitle: tabs.replacingChooserIDs.contains(surface.id)
+                                ? loc(.reconnect_choose_subtitle) : nil
                         )
                     }
                 }

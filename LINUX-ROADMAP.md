@@ -1938,19 +1938,21 @@ Explicitly **do not** port this as a second `GtkWindow` layered over the main on
 
 **Verify on Linux.** With a terminal focused, click a snippet's play button → the command runs in it immediately. Open several terminals and use the chevron menu to target a specific one; with no terminal open the play button is disabled.
 
-## 42. Two-stage pane close in split view (arm → confirm)
+## 42. Two-stage pane close in split view (arm → confirm / SSH → chooser)
 
 **What it is.** In a SPLIT tab (more than one pane), closing a pane is now two-stage so a stray click on the wrong ✕ can't kill a running session:
 1. **First click** on a pane's ✕ (or ⌘W) only **arms** it: the pane gets a red border, its ✕ turns into a persistent red ✕, and a red "Click ✕ again to close" pill appears in the header. Nothing closes.
-2. **Second click** on the same ✕ shows an explicit confirmation dialog ("Close 'name'? Its running process will be terminated."); **Close** removes the pane, **Cancel** disarms it. Switching tabs also disarms.
+2. **Second click** on the same ✕:
+   - **SSH pane** → it becomes an SSH connection **chooser** ("Choose a new connection"): the session is torn down, the pane is swapped for a fresh blank surface, and the split chooser opens over it. Picking a host connects that host in the pane; dismissing the chooser (`Dismiss` / Esc / the pane ✕) actually closes the pane.
+   - **Local pane** → an explicit confirmation dialog ("Close 'name'? Its running process will be terminated."); **Close** removes the pane, **Cancel** disarms it.
 
-Single-pane tabs are unchanged (the old "prompt only when a process runs" flow). The focus-mode sidebar shows the same armed state on its rows.
+Switching tabs disarms. Single-pane tabs are unchanged (the old "prompt only when a process runs" flow). The focus-mode sidebar shows the same armed state; the focus-mode main pane shows the same SSH chooser.
 
-**Logic (platform-agnostic).** A `@Published armedClosePaneID: UUID?` on the tab model. `requestClosePane` checks whether the tab has >1 leaf: if so, clicking the ✕ toggles arm/confirm (`armedClosePaneID == surface.id` → show dialog then close; otherwise set it). The armed id is cleared when the pane closes, when `selection` changes (any tab switch), and when the dialog's Cancel is chosen (cleared before the dialog is shown). The dialog always prompts for the armed close — it's the explicit second reminder. `closePaneSkippingConfirm` (aborting a connecting/blank pane) intentionally bypasses all of this.
+**Logic (platform-agnostic).** A `@Published armedClosePaneID: UUID?` on the tab model. `requestClosePane` checks whether the tab has >1 leaf: if so, clicking the ✕ toggles arm/confirm (`armedClosePaneID == surface.id` → act; otherwise set it). For an SSH pane (`connections[id].model.host != nil`) the second click calls a "replace with chooser" routine instead of a dialog: `teardownConnection`, drop the sticky title, **swap the surface for a fresh blank `SurfaceView` at the same split node** (freeing the old surface terminates the ssh child), mark it `awaitingChoice` + `replacingChooserIDs`, and let the existing chooser/resolve path (pick host → `connectSavedHostInPane`; dismiss → `closePaneSkippingConfirm`) drive the rest. The armed id is cleared on pane close, on `selection` change, and before showing the chooser/dialog.
 
-**macOS→Linux.** Same state + toggle logic in the GTK apprt: a per-surface "armed" id, red CSS border when armed, a two-click close, and a `GtkAlertDialog` on the second click. Clearing rules are identical (on close, on notebook tab switch, on Cancel). No shared-core involvement.
+**macOS→Linux.** Same state + toggle logic in the GTK apprt: a per-surface "armed" id, red CSS border when armed, a two-click close, a `GtkAlertDialog` for local panes, and — for SSH panes — a pane-replacement into a chooser. The chooser already exists for fresh splits; the only new bit is "on SSH close, swap the pane's surface for a blank one and show the chooser" (which the split-chooser resolve path already handles). Clearing rules are identical. No shared-core involvement.
 
-**Verify on Linux.** Split a tab; click ✕ on a pane → red border + red ✕, nothing closes; click ✕ again → confirmation dialog; Close closes it, Cancel disarms. ⌘W/Ctrl+W behaves the same. In a single-pane tab, Ctrl+W closes with the existing running-process prompt. Switching tabs while a pane is armed disarms it.
+**Verify on Linux.** Split a tab with a local shell; click ✕ twice → confirmation dialog; Close closes it, Cancel disarms. Split a tab with an SSH pane; click ✕ twice → the pane becomes a "Choose a new connection" chooser (old ssh process gone per `ps`); pick a host → it connects there; or Dismiss → the pane closes. ⌘W/Ctrl+W behaves the same. Switching tabs while a pane is armed disarms it.
 
 ## 43. Manual SSH session reconnect
 

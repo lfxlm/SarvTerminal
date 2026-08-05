@@ -44,6 +44,7 @@ records the final working logic — not intermediate churn. See `AGENTS.md`
 | 15 | `0126148` | `fix(vaults): feed saved password to sudo -S over ssh stdin for docker; monitor memory from /proc/meminfo` |
 | 16 | `897e3df` | `feat(vaults): attach shell "Open in split pane" option; attach uses bash; fix GPU VRAM MiB→GiB display` |
 | 17 | `6364bfe` | `feat(vaults): attach copies the current session (auto-connect via guided flow); monitor lists all disks` |
+| 18 | `de9a7d1` | `fix(vaults): three-stage close only for SSH panes (arm → chooser → close); local panes close directly` |
 
 ---
 

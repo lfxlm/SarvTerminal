@@ -114,26 +114,6 @@ enum ContainerAttachService {
         return (parsePods(r.out), nil)
     }
 
-    /// Full terminal command that attaches into a remote container — the process
-    /// of a new tab IS this command (`ssh -t host docker exec …`). All single
-    /// words, so Ghostty's whitespace command-splitting leaves it intact; `-t`
-    /// forces a remote tty so `docker exec -it` works.
-    static func remoteDockerAttachCommand(host: SavedHost, needsSudo: Bool, _ c: DockerContainer) -> String {
-        // Interactive `sudo` (not `sudo -n`): the attach tab/split is a real
-        // terminal, so sudo can prompt for the password there. Prefers `bash`.
-        let sudo = needsSudo ? "sudo " : ""
-        let opts = RemoteCommand.sshOptions(for: host).joined(separator: " ")
-        return "ssh \(opts) -t \(RemoteCommand.target(host)) \(sudo)docker exec -it \(c.name) bash"
-    }
-
-    static func remoteK8sAttachCommand(host: SavedHost, _ pod: K8sPod, container: String?) -> String {
-        let opts = RemoteCommand.sshOptions(for: host).joined(separator: " ")
-        var cmd = "ssh \(opts) -t \(RemoteCommand.target(host)) kubectl exec -it -n \(pod.namespace) \(pod.name)"
-        if let container, !container.isEmpty { cmd += " -c \(container)" }
-        cmd += " -- bash"
-        return cmd
-    }
-
     /// The bare docker/kubectl command typed into an ALREADY-connected terminal
     /// ("run in current tab" while the user is on the host). Interactive `sudo`
     /// prompts for the password in the terminal. Prefers `bash`.
@@ -353,13 +333,17 @@ final class ContainerAttachModel: ObservableObject {
             open(ContainerAttachService.dockerAttachCommand(binary: binary, c), name: c.name, target: target)
             return
         }
+        // Remote: "copy the current session" — open a new tab/split that
+        // auto-connects to `host` with the saved password, then runs the docker
+        // command in the remote shell. Current tab types it into the shell.
+        let cmd = ContainerAttachService.dockerAttachTyped(needsSudo: dockerNeedsSudo, c)
         switch target {
-        case .newTab, .split:
-            open(ContainerAttachService.remoteDockerAttachCommand(host: host, needsSudo: dockerNeedsSudo, c),
-                 name: c.name, target: target)
+        case .newTab:
+            _ = VaultsTabsModel.shared.openSSHTab(host: host, name: c.name, startupCommand: cmd)
+        case .split:
+            _ = VaultsTabsModel.shared.openSSHSplit(host: host, name: c.name, startupCommand: cmd)
         case .currentTab:
-            open(ContainerAttachService.dockerAttachTyped(needsSudo: dockerNeedsSudo, c),
-                 name: c.name, target: target)
+            _ = VaultsTabsModel.shared.runInTargetTerminal(cmd)
         }
     }
 
@@ -370,12 +354,14 @@ final class ContainerAttachModel: ObservableObject {
                  name: pod.name, target: target)
             return
         }
+        let cmd = ContainerAttachService.k8sAttachTyped(pod, container: container)
         switch target {
-        case .newTab, .split:
-            open(ContainerAttachService.remoteK8sAttachCommand(host: host, pod, container: container),
-                 name: pod.name, target: target)
+        case .newTab:
+            _ = VaultsTabsModel.shared.openSSHTab(host: host, name: pod.name, startupCommand: cmd)
+        case .split:
+            _ = VaultsTabsModel.shared.openSSHSplit(host: host, name: pod.name, startupCommand: cmd)
         case .currentTab:
-            open(ContainerAttachService.k8sAttachTyped(pod, container: container), name: pod.name, target: target)
+            _ = VaultsTabsModel.shared.runInTargetTerminal(cmd)
         }
     }
 

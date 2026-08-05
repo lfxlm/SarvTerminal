@@ -781,6 +781,48 @@ final class VaultsTabsModel: ObservableObject {
         return true
     }
 
+    /// "Copy the current session" for a remote command (docker exec, …): open a
+    /// NEW TAB SSH session to `host` — auto-connecting with the saved password
+    /// via the guided flow — and run `startupCommand` in the remote shell once
+    /// connected. Returns false if no host/app is available.
+    @discardableResult
+    @MainActor
+    func openSSHTab(host: SavedHost, name: String, startupCommand: String?) -> Bool {
+        guard let app = (NSApp.delegate as? AppDelegate)?.ghostty.app else { return false }
+        let effective = hostWithStartupCommand(host, startupCommand)
+        _ = startSSHConnection(app: app, command: host.sshCommand(staged: true),
+                               name: name, host: effective)
+        return true
+    }
+
+    /// Same as `openSSHTab`, but opens the session in a SPLIT PANE of the active
+    /// terminal instead of a new tab.
+    @discardableResult
+    @MainActor
+    func openSSHSplit(host: SavedHost, name: String, startupCommand: String?) -> Bool {
+        guard let tab = activeTerminal,
+              let anchor = tab.focusedSurface ?? tab.surfaceTree.root?.leftmostLeaf(),
+              let app = (NSApp.delegate as? AppDelegate)?.ghostty.app else { return false }
+        let effective = hostWithStartupCommand(host, startupCommand)
+        let direction: SplitTree<Ghostty.SurfaceView>.NewDirection =
+            anchor.bounds.width >= anchor.bounds.height ? .right : .down
+        let blank = Ghostty.SurfaceView(app)
+        guard let newTree = try? tab.surfaceTree.inserting(view: blank, at: anchor, direction: direction) else { return false }
+        tab.surfaceTree = newTree
+        connectSavedHostInPane(host: effective, surface: blank)
+        return true
+    }
+
+    /// A copy of `host` whose startup (post-login) command is `command`, so the
+    /// guided connect runs it right after the session is established.
+    private func hostWithStartupCommand(_ host: SavedHost, _ command: String?) -> SavedHost {
+        let trimmed = command?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !trimmed.isEmpty else { return host }
+        var copy = host
+        copy.initialCommand = trimmed
+        return copy
+    }
+
     // MARK: - Staged SSH connection
 
     /// Whether the connection popup should collect a password in a field. Only

@@ -17,8 +17,8 @@ enum ServerMonitorService {
     /// The remote script — one labeled line per metric so a single ssh call
     /// returns everything. All pieces are POSIX-portable; memory comes from
     /// `/proc/meminfo` (present on every Linux), not `free` (absent on minimal
-    /// images / busybox). Values: CPU%, load, cores, MEM=totalKB usedKB,
-    /// DISK, GPU.
+    /// images / busybox). Values: CPU%, load, cores, MEM=totalKB usedKB, one
+    /// DISK=fs|size|used|pct|mount per real filesystem, GPU.
     private static let script = """
     echo "HOST:$(hostname 2>/dev/null)"
     echo "OS:$(sed -n 's/^PRETTY_NAME="\\(.*\\)"/\\1/p' /etc/os-release 2>/dev/null)"
@@ -27,7 +27,7 @@ enum ServerMonitorService {
     echo "CORES:$(nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null)"
     echo "CPU:$(top -bn1 2>/dev/null | awk '/%Cpu/{print 100-$8}')"
     echo "MEM:$(awk '/^MemTotal:/{t=$2} /^MemAvailable:/{a=$2} END{print t, t-a}' /proc/meminfo 2>/dev/null)"
-    echo "DISK:$(df -h / 2>/dev/null | awk 'NR==2{print $2,$3,$5}')"
+    df -h 2>/dev/null | awk 'NR>1 && $6 !~ /^\\/(proc|sys|dev\\/shm|run|run\\/lock|dev\\/mqueue|dev\\/pts)/ {print "DISK:"$1"|"$2"|"$3"|"$5"|"$6}'
     echo "GPU:$(nvidia-smi --query-gpu=name,memory.used,memory.total,utilization.gpu,temperature.gpu --format=csv,noheader,nounits 2>/dev/null | head -1)"
     echo "GPUERR:$(nvidia-smi 2>&1 >/dev/null | head -1)"
     """
@@ -41,22 +41,20 @@ enum ServerMonitorService {
             if (m.error ?? "").isEmpty { m.error = "Couldn't reach \(host.displayLabel)." }
             return m
         }
-        var rows: [String: String] = [:]
+        var rows: [String: [String]] = [:]
         for line in res.stdout.split(separator: "\n") {
             guard let colon = line.firstIndex(of: ":") else { continue }
             let key = String(line[..<colon])
-            let value = String(line[line.index(after: colon)...])
-            if !value.trimmingCharacters(in: .whitespaces).isEmpty {
-                rows[key] = value.trimmingCharacters(in: .whitespaces)
-            }
+            let value = String(line[line.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
+            if !value.isEmpty { rows[key, default: []].append(value) }
         }
-        m.os = rows["OS"] ?? ""
-        m.uptime = rows["UPTIME"] ?? ""
-        m.load = rows["LOAD"] ?? ""
-        m.cores = rows["CORES"] ?? ""
-        if let cpu = rows["CPU"]?.replacingOccurrences(of: ",", with: "."),
+        m.os = rows["OS"]?.first ?? ""
+        m.uptime = rows["UPTIME"]?.first ?? ""
+        m.load = rows["LOAD"]?.first ?? ""
+        m.cores = rows["CORES"]?.first ?? ""
+        if let cpu = rows["CPU"]?.first?.replacingOccurrences(of: ",", with: "."),
            let pct = Double(cpu) { m.cpuPercent = min(max(pct, 0), 100) }
-        if let mem = rows["MEM"] {
+        if let mem = rows["MEM"]?.first {
             // `/proc/meminfo` gives kB: `total used`.
             let parts = mem.split(separator: " ")
             if parts.count >= 2,
@@ -65,15 +63,13 @@ enum ServerMonitorService {
                 m.memUsedMB = usedKB / 1024
             }
         }
-        if let disk = rows["DISK"] {
-            let parts = disk.split(separator: " ")
-            if parts.count >= 3 {
-                m.diskTotal = String(parts[0])
-                m.diskUsed = String(parts[1])
-                m.diskPercent = String(parts[2])
-            }
+        m.diskEntries = (rows["DISK"] ?? []).compactMap { line in
+            let parts = line.split(separator: "|").map { String($0) }
+            guard parts.count >= 5 else { return nil }
+            return DiskEntry(fs: parts[0], size: parts[1], used: parts[2],
+                             percent: parts[3], mount: parts[4])
         }
-        if let gpu = rows["GPU"], !gpu.isEmpty {
+        if let gpu = rows["GPU"]?.first, !gpu.isEmpty {
             let parts = gpu.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
             if parts.count >= 5 {
                 m.gpuName = parts[0]
@@ -92,6 +88,17 @@ enum ServerMonitorService {
 
 // MARK: - Model
 
+/// One mounted filesystem snapshot.
+struct DiskEntry: Equatable {
+    var fs = ""
+    var size = ""
+    var used = ""
+    var percent = ""
+    var mount = ""
+    /// 0–100 usage percent (nil if unparseable).
+    var percentNum: Double? { Double(percent.trimmingCharacters(in: CharacterSet(charactersIn: "%"))) }
+}
+
 /// One snapshot of a server's resource usage.
 struct ServerMetrics: Equatable {
     var hostname: String = ""
@@ -102,9 +109,7 @@ struct ServerMetrics: Equatable {
     var cpuPercent: Double?
     var memTotalMB: Int64 = 0
     var memUsedMB: Int64 = 0
-    var diskTotal: String = ""
-    var diskUsed: String = ""
-    var diskPercent: String = ""
+    var diskEntries: [DiskEntry] = []
     var gpuName: String = ""
     var gpuMemUsedMiB: Int64 = 0
     var gpuMemTotalMiB: Int64 = 0
@@ -121,9 +126,6 @@ struct ServerMetrics: Equatable {
         let total = ByteCountFormatter.string(fromByteCount: memTotalMB * 1_048_576, countStyle: .memory)
         let used = ByteCountFormatter.string(fromByteCount: memUsedMB * 1_048_576, countStyle: .memory)
         return "\(used) / \(total)"
-    }
-    var diskPercentNum: Double? {
-        Double(diskPercent.dropLast())
     }
 }
 
@@ -347,12 +349,34 @@ struct ServerMonitorView: View {
     }
 
     private var diskSection: some View {
-        metricCard(
-            icon: "internaldrive",
-            title: "Disk",
-            detail: model.metrics.diskTotal.isEmpty ? "" : "\(model.metrics.diskUsed) used of \(model.metrics.diskTotal)"
-        ) {
-            gauge(value: model.metrics.diskPercentNum.map { $0 / 100 }, color: .teal)
+        VStack(alignment: .leading, spacing: 10) {
+            sectionHeader("Disk", systemImage: "internaldrive")
+            if model.metrics.diskEntries.isEmpty {
+                Text("No disks found").font(.caption).foregroundStyle(.secondaryText)
+            } else {
+                ForEach(model.metrics.diskEntries, id: \.mount) { disk in
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 8) {
+                            Text(disk.mount).font(.callout.weight(.medium)).lineLimit(1)
+                            Text(disk.fs).font(.caption2).foregroundStyle(.tertiaryText).lineLimit(1)
+                            Spacer()
+                            Text("\(disk.used) of \(disk.size) · \(disk.percent)")
+                                .font(.caption.monospaced()).foregroundStyle(.secondaryText)
+                        }
+                        gauge(value: disk.percentNum.map { $0 / 100 }, color: .teal)
+                    }
+                    .padding(10)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.secondary.opacity(0.06)))
+                }
+            }
+        }
+    }
+
+    private func sectionHeader(_ title: String, systemImage: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: systemImage).font(.system(size: 13)).foregroundStyle(.secondaryText)
+            Text(title).font(.callout.weight(.medium))
+            Spacer()
         }
     }
 

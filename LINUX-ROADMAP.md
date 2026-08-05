@@ -2056,6 +2056,18 @@ Clicking confirms first ("Disconnect the current session to 'host' and open a fr
 
 **Verify on Linux.** Attach a container → "Open in split pane" splits the current tab and drops you into `bash` inside the container; the pane header shows the container name. GPU monitor on an NVIDIA host shows e.g. "7.4 GB / 24 GB" (correct, not "7551 / 24576").
 
+## 51. Copy-current-session attach; all disks in the monitor
+
+**What it is.** Two fixes to the remote panels:
+- **Attach reuses the session (auto-connect).** Docker/K8s attach in a NEW TAB or SPLIT no longer spawns a raw `ssh host docker exec …` terminal (which prompted interactively for the SSH password). It now **copies the current session**: a new tab/split opens a guided SSH connection to the same host — auto-connected with the saved password via askpass — and runs the docker command in the remote shell once logged in. "Run in current tab" still types the command into the already-connected terminal.
+- **All disks.** The monitor previously showed only `/` (`df -h /`). It now lists every real filesystem from `df -h` (pseudo-filesystems like /proc, /sys, /dev/shm, /run filtered out), each with its own used/size/percent bar.
+
+**Logic (platform-agnostic).** "Copy the session" = duplicate the saved host with its `initialCommand` set to the attach command, then run it through the existing guided-connect path (`startSSHConnection` for a new tab, `connectSavedHostInPane` for a split) — which feeds the saved password via askpass and types `host.initialCommand` into the fresh shell on connect (the same mechanism the host editor's "Startup command" uses). The disk script prints one `DISK=fs|size|used|pct|mount` line per filesystem; the parser collects them into an array rendered as per-mount bars.
+
+**macOS→Linux.** Guided connect + post-login command is the shared SSH surface machinery (same in GTK). `df -h` + mount filtering is pure shell. No new platform APIs.
+
+**Verify on Linux.** In an SSH tab, attach a container → "Open in new tab"/"Open in split pane" opens a session that logs in automatically (saved password, no prompt) and runs `docker exec` immediately; the sudo password, if needed, prompts once inside the shell. The monitor's Disk section shows every real mount (`/`, `/boot`, `/home`, data volumes…) with its own bar instead of a single root line.
+
 ## Appendix A. Visual design reference
 
 This appendix documents the concrete visual specification of the macOS "Vaults" host-manager surfaces so a GTK/Adwaita implementation can match the look. Values are extracted verbatim from the SwiftUI source under `macos/Sources/Features/HostManager/`. Where a value is not present in source, it is marked **"not specified in source."**

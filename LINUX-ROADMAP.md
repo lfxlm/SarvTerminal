@@ -35,6 +35,7 @@ records the final working logic — not intermediate churn. See `AGENTS.md`
 | 6 | `4ea99a3` | `feat(sftp): real transfer cancellation, failed-transfer retry & cancel-all; delete-failure feedback, copy/download conflict dialogs, dirty-close confirm; connect spinner + password retry focus; ⌘F host search` |
 | 7 | `dbd60c5` | `feat(vaults): broadcast input warning pill with one-click exit; data-load-failure banners for data-backed sections; SFTP empty-folder state + loading overlay` |
 | 8 | `390e3fc` | `feat(vaults): palette defaults to first matching host; port-forward validation + run-state filter + start/stop all; snippets one-click run in focused terminal` |
+| 9 | `7463c52` | `feat(vaults): two-stage pane close in split view (arm → confirm dialog); focus-mode sidebar shows the armed state` |
 
 ---
 

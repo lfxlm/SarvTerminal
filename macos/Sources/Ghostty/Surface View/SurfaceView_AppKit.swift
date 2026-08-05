@@ -1687,7 +1687,20 @@ extension Ghostty {
                 item.setImageIfDesired(systemSymbolName: "key.fill")
             }
 
+            // Reconnect SSH session — available on any SSH-connected pane.
+            if isSSHConnection {
+                menu.addItem(.separator())
+                item = menu.addItem(withTitle: loc(.reconnect_ssh), action: #selector(reconnectSSH(_:)), keyEquivalent: "")
+                item.setImageIfDesired(systemSymbolName: "arrow.clockwise")
+            }
+
             return menu
+        }
+
+        /// Whether this surface hosts an SSH session (reconnect menu item).
+        private var isSSHConnection: Bool {
+            guard let conn = VaultsTabsModel.shared.connections[id] else { return false }
+            return conn.model.host != nil
         }
 
         /// The SSH password for the host connected to this surface, if any.
@@ -1736,6 +1749,12 @@ extension Ghostty {
         @IBAction func sendPassword(_ sender: Any?) {
             guard let pw = sshPassword else { return }
             surfaceModel?.sendText(pw + "\n")
+        }
+
+        /// Reconnect SSH session (context menu): confirm, then relaunch a fresh
+        /// connection on this pane.
+        @IBAction func reconnectSSH(_ sender: Any?) {
+            VaultsTabsModel.shared.reconnectSSH(surface: self)
         }
 
         @IBAction override func selectAll(_ sender: Any?) {

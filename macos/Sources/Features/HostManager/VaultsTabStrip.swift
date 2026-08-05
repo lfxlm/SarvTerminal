@@ -573,16 +573,23 @@ private struct TabChip: View {
     private let closeHitWidth: CGFloat = 26
 
     private var menuItems: [TabChipMenuItem] {
-        [
+        var items: [TabChipMenuItem] = [
             .init(title: "Close Tab", action: { tabs.requestCloseTerminal(tab.id) }),
             .init(title: "Close Other Tabs", action: { tabs.requestCloseOtherTabs(keep: tab.id) }),
             .init(title: "Close Tabs to the Right", action: { tabs.requestCloseTabsToRight(of: tab.id) }),
             .init(title: "Show All Tabs", action: { tabs.showAllTabs = true }),
             .init(title: "Duplicate Tab", action: { tabs.duplicateTab(tab.id) }),
+        ]
+        // Reconnect SSH session — only for tabs running an SSH pane.
+        if tabs.tabHasSSHConnection(tab.id) {
+            items.append(.init(title: loc(.reconnect_ssh), action: { tabs.reconnectTabSSH(tab.id) }))
+        }
+        items.append(contentsOf: [
             .init(title: "Save Session…", action: onSaveSession),
             .init(title: "Rename Tab…", action: onRename, separatorBefore: true),
             .init(title: "Tab Color…", action: { showColorPicker = true }),
-        ]
+        ])
+        return items
     }
 
     var body: some View {

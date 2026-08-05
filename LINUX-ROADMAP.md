@@ -1951,6 +1951,20 @@ Single-pane tabs are unchanged (the old "prompt only when a process runs" flow).
 
 **Verify on Linux.** Split a tab; click ✕ on a pane → red border + red ✕, nothing closes; click ✕ again → confirmation dialog; Close closes it, Cancel disarms. ⌘W/Ctrl+W behaves the same. In a single-pane tab, Ctrl+W closes with the existing running-process prompt. Switching tabs while a pane is armed disarms it.
 
+## 43. Manual SSH session reconnect
+
+**What it is.** A manual "Reconnect SSH Session" action that forces a FRESH ssh connection on a live pane — without waiting for the session to drop. Available from two places:
+- **Terminal right-click menu** (any SSH pane): shows a separator + "Reconnect SSH Session" item.
+- **Tab chip right-click menu** (any tab running an SSH pane): reconnects the focused SSH pane (or the first one).
+
+Clicking confirms first ("Disconnect the current session to 'host' and open a fresh one?") because it drops the live session, then relaunches through the existing guided reconnect flow.
+
+**Logic (platform-agnostic).** The surface's SSH connection is looked up by surface id (`connections[id]`, non-nil `model.host`). On confirm, `reconnect(for:)` resets attempt counters, refreshes the saved password, and calls `launchSSHConnection` — which spawns a fresh ssh surface, swaps it into the pane's split-tree node, re-keys the connection registry, and restarts the controller. The old surface is dropped (child process terminated). A tab-level helper picks the focused SSH leaf, else the first SSH leaf.
+
+**macOS→Linux.** The same "lookup by pane id → confirm → relaunch ssh into the same pane" flow. libghostty's surface-replace path is shared; the GTK apprt needs the two menu entries (GtkMenu on the terminal widget + notebook tab menu) and a confirmation dialog. Menu items should be shown only when the pane/tab actually runs an SSH connection.
+
+**Verify on Linux.** Connect to a host, right-click the terminal → "Reconnect SSH Session"; confirm → a fresh ssh session replaces the old one in place (a `ps` before/after shows the old ssh pid gone). Same from the tab menu. A local shell pane shows no Reconnect item.
+
 ## Appendix A. Visual design reference
 
 This appendix documents the concrete visual specification of the macOS "Vaults" host-manager surfaces so a GTK/Adwaita implementation can match the look. Values are extracted verbatim from the SwiftUI source under `macos/Sources/Features/HostManager/`. Where a value is not present in source, it is marked **"not specified in source."**

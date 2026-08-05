@@ -1116,6 +1116,46 @@ final class VaultsTabsModel: ObservableObject {
         }
     }
 
+    /// Manually force a fresh SSH connection on an SSH pane (the context menu
+    /// "Reconnect SSH session"). Confirms first because it drops the live
+    /// session; on confirm it reuses the guided reconnect flow (refreshes the
+    /// saved password, then relaunches in place).
+    @MainActor
+    func reconnectSSH(surface: Ghostty.SurfaceView) {
+        guard let conn = connections[surface.id], let host = conn.model.host else { return }
+        SarvAlert.present(
+            title: loc(.reconnect_ssh),
+            message: loc(.reconnect_ssh_confirm_message, host.displayLabel),
+            buttons: [
+                .init(loc(.reconnect), isDefault: true),
+                .init(loc(.cancel), isCancel: true),
+            ]
+        ) { [weak self] result in
+            if result.buttonIndex == 0 { self?.reconnect(for: conn.model) }
+        }
+    }
+
+    /// Reconnect the SSH pane of a whole tab (tab-chip context menu): the
+    /// focused pane if it's an SSH session, else the first SSH pane.
+    @MainActor
+    func reconnectTabSSH(_ tabID: UUID) {
+        guard let tab = terminals.first(where: { $0.id == tabID }) else { return }
+        let leaves = tab.surfaceTree.root?.leaves() ?? []
+        let sshLeaves = leaves.filter { connections[$0.id]?.model.host != nil }
+        if let focused = tab.focusedSurface, sshLeaves.contains(where: { $0 === focused }) {
+            reconnectSSH(surface: focused)
+        } else if let first = sshLeaves.first {
+            reconnectSSH(surface: first)
+        }
+    }
+
+    /// Whether the tab has at least one pane running an SSH connection — drives
+    /// the tab menu's "Reconnect SSH session" item.
+    func tabHasSSHConnection(_ tabID: UUID) -> Bool {
+        guard let tab = terminals.first(where: { $0.id == tabID }) else { return false }
+        return (tab.surfaceTree.root?.leaves() ?? []).contains { connections[$0.id]?.model.host != nil }
+    }
+
     /// The session authenticated: hide the popup (show the live terminal) and
     /// save the working password to the host so future connects are silent.
     func connectionDidConnect(for model: SSHConnectionModel) {

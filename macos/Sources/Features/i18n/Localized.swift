@@ -107,6 +107,9 @@ enum LocalizedKey: String, CaseIterable {
     case pf_filter_failed
     case click_close_again
     case close_pane
+    case reconnect_ssh
+    case reconnect_ssh_confirm_message
+    case reconnect
 
     // ── Settings ────────────────────────────────────────
     case auto_save
@@ -816,6 +819,9 @@ private let enStrings: [LocalizedKey: String] = [
     .pf_filter_failed: "Failed",
     .click_close_again: "Click ✕ again to close",
     .close_pane: "Close pane",
+    .reconnect_ssh: "Reconnect SSH Session",
+    .reconnect_ssh_confirm_message: "Disconnect the current session to \"%@\" and open a fresh one?",
+    .reconnect: "Reconnect",
 
     // ── Settings ────────────────────────────────────────
     .auto_save: "Auto-save",
@@ -1510,6 +1516,9 @@ private let zhStrings: [LocalizedKey: String] = [
     .pf_filter_failed: "失败",
     .click_close_again: "再次点击 ✕ 关闭",
     .close_pane: "关闭分屏",
+    .reconnect_ssh: "重新连接 SSH",
+    .reconnect_ssh_confirm_message: "断开到“%@”的当前会话并建立新连接？",
+    .reconnect: "重新连接",
 
     // ── Settings ────────────────────────────────────────
     .auto_save: "自动保存",

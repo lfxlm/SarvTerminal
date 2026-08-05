@@ -205,6 +205,9 @@ final class VaultsTabsModel: ObservableObject {
                 lastTerminalID = id
                 attentionTabs.remove(id)
             }
+            // A pane armed for closing belongs to the previous context — disarm
+            // on any selection change (covers every tab-switch path).
+            armedClosePaneID = nil
         }
     }
     /// The most recently focused terminal — the target for "run snippet" when a
@@ -219,6 +222,12 @@ final class VaultsTabsModel: ObservableObject {
     @Published var focusMode: Bool = false
     /// Which pane fills the main area in focus mode.
     @Published var focusModeSurfaceID: UUID?
+    /// Surface ID of a pane in a SPLIT tab whose ✕ was clicked once — it's
+    /// "armed" for closing (shown with a red border). A second ✕ click shows the
+    /// close confirmation and actually closes it; the confirmation's Cancel
+    /// disarms. This two-stage guard prevents accidental pane closes in split
+    /// view, where a stray click on the wrong ✕ used to kill a running session.
+    @Published private(set) var armedClosePaneID: UUID?
     /// Show the "all tabs" overview grid.
     @Published var showAllTabs: Bool = false
     /// Left-edge scratchpad panel visibility (toggled by the top-bar button,
@@ -1398,6 +1407,7 @@ final class VaultsTabsModel: ObservableObject {
     private func performClosePane(surface: Ghostty.SurfaceView) {
         guard let tab = tab(containing: surface),
               let node = tab.surfaceTree.root?.node(view: surface) else { return }
+        if armedClosePaneID == surface.id { armedClosePaneID = nil }
         awaitingChoice.remove(surface.id)
         teardownConnection(surfaceID: surface.id)   // drop this pane's SSH popup, if any
         let remaining = tab.surfaceTree.removing(node)
@@ -1839,13 +1849,51 @@ final class VaultsTabsModel: ObservableObject {
     }
 
     /// User-initiated close of a single pane (pane header ×, ⌘W).
+    ///
+    /// In a SPLIT tab (more than one pane) this is TWO-STAGE so a stray click
+    /// can't kill a running session:
+    ///   1. First click "arms" the pane — it gets a red border and its ✕ turns
+    ///      red. Nothing closes yet.
+    ///   2. Clicking the same ✕ again (or pressing ⌘W again) shows an explicit
+    ///      confirmation dialog; only confirming actually closes the pane.
+    ///      The dialog's Cancel disarms.
+    /// A single-pane tab keeps the old flow (prompt only when a process runs).
     @MainActor
     func requestClosePane(surface: Ghostty.SurfaceView) {
-        confirmCloseIfRunning(
-            [surface],
+        let isSplit = (tab(containing: surface)?.surfaceTree.root?.leaves().count ?? 0) > 1
+        guard isSplit else {
+            confirmCloseIfRunning(
+                [surface],
+                title: "Close Terminal?",
+                message: "This terminal still has a running process. If you close it the process will be killed."
+            ) { [weak self] in self?.performClosePane(surface: surface) }
+            return
+        }
+        if armedClosePaneID == surface.id {
+            // Second click — intentional. Confirm, then close.
+            armedClosePaneID = nil
+            confirmPaneClose(surface)
+        } else {
+            // First click — arm the pane for closing (visual selection).
+            armedClosePaneID = surface.id
+        }
+    }
+
+    /// The explicit "really close this pane?" confirmation shown on the SECOND
+    /// ✕ click in a split tab. Always prompts — this is the second reminder.
+    @MainActor
+    private func confirmPaneClose(_ surface: Ghostty.SurfaceView) {
+        let name = paneDisplayTitle(for: surface)
+        SarvAlert.present(
             title: "Close Terminal?",
-            message: "This terminal still has a running process. If you close it the process will be killed."
-        ) { [weak self] in self?.performClosePane(surface: surface) }
+            message: "Close \u{201C}\(name)\u{201D}? Its running process will be terminated. This can't be undone.",
+            buttons: [
+                .init("Close", isDefault: true, isDestructive: true),
+                .init("Cancel", isCancel: true),
+            ]
+        ) { result in
+            if result.buttonIndex == 0 { self.performClosePane(surface: surface) }
+        }
     }
 
     /// User-initiated "Close Other Tabs".

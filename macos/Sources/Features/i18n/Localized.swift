@@ -105,6 +105,8 @@ enum LocalizedKey: String, CaseIterable {
     case pf_filter_running
     case pf_filter_stopped
     case pf_filter_failed
+    case click_close_again
+    case close_pane
 
     // ── Settings ────────────────────────────────────────
     case auto_save
@@ -812,6 +814,8 @@ private let enStrings: [LocalizedKey: String] = [
     .pf_filter_running: "Running",
     .pf_filter_stopped: "Stopped",
     .pf_filter_failed: "Failed",
+    .click_close_again: "Click ✕ again to close",
+    .close_pane: "Close pane",
 
     // ── Settings ────────────────────────────────────────
     .auto_save: "Auto-save",
@@ -1504,6 +1508,8 @@ private let zhStrings: [LocalizedKey: String] = [
     .pf_filter_running: "运行中",
     .pf_filter_stopped: "已停止",
     .pf_filter_failed: "失败",
+    .click_close_again: "再次点击 ✕ 关闭",
+    .close_pane: "关闭分屏",
 
     // ── Settings ────────────────────────────────────────
     .auto_save: "自动保存",

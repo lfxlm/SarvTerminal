@@ -72,6 +72,7 @@ struct VaultsFocusModeView: View {
                             overrideTitle: tabs.paneTitleOverride(for: pane.id),
                             isSelected: selected?.id == pane.id,
                             isBroadcastTarget: tabs.isPaneBroadcastTarget(pane),
+                            isArmed: tabs.armedClosePaneID == pane.id,
                             onSelect: { tabs.selectFocusModePane(pane) },
                             onDuplicate: { tabs.duplicatePane(surface: pane) },
                             onClose: { tabs.requestClosePane(surface: pane) },
@@ -288,6 +289,9 @@ private struct FocusSidebarRow: View {
     let isSelected: Bool
     /// Whether this pane is a broadcast target.
     let isBroadcastTarget: Bool
+    /// This pane's ✕ was clicked once — armed for closing (persistent red ✕,
+    /// second click confirms).
+    let isArmed: Bool
     let onSelect: () -> Void
     let onDuplicate: () -> Void
     let onClose: () -> Void
@@ -317,15 +321,16 @@ private struct FocusSidebarRow: View {
                     .truncationMode(.tail)
             }
             Spacer(minLength: 4)
-            if hovering {
+            if hovering || isArmed {
                 Button(action: onClose) {
                     Image(systemName: "xmark")
                         .font(.system(size: 9, weight: .bold))
                         .frame(width: 16, height: 16)
+                        .background(RoundedRectangle(cornerRadius: 4).fill(isArmed ? Color.red : .clear))
+                        .foregroundStyle(isArmed ? Color.white : .secondaryText)
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(.secondaryText)
-                .help("Close")
+                .help(isArmed ? loc(.click_close_again) : loc(.close_pane))
             }
             // Per-pane broadcast toggle. Shows filled green when this pane
             // is a broadcast target; click toggles it independently.
@@ -345,7 +350,9 @@ private struct FocusSidebarRow: View {
         .padding(.vertical, 8)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(isSelected ? Color.accentColor.opacity(0.18) : Color.clear)
+                .fill(isArmed
+                      ? Color.red.opacity(0.15)
+                      : (isSelected ? Color.accentColor.opacity(0.18) : Color.clear))
         )
         .contentShape(Rectangle())
         .onTapGesture { onSelect() }

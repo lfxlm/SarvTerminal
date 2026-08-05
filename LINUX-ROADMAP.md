@@ -1936,6 +1936,20 @@ Explicitly **do not** port this as a second `GtkWindow` layered over the main on
 
 **Verify on Linux.** With a terminal focused, click a snippet's play button → the command runs in it immediately. Open several terminals and use the chevron menu to target a specific one; with no terminal open the play button is disabled.
 
+## 42. Two-stage pane close in split view (arm → confirm)
+
+**What it is.** In a SPLIT tab (more than one pane), closing a pane is now two-stage so a stray click on the wrong ✕ can't kill a running session:
+1. **First click** on a pane's ✕ (or ⌘W) only **arms** it: the pane gets a red border, its ✕ turns into a persistent red ✕, and a red "Click ✕ again to close" pill appears in the header. Nothing closes.
+2. **Second click** on the same ✕ shows an explicit confirmation dialog ("Close 'name'? Its running process will be terminated."); **Close** removes the pane, **Cancel** disarms it. Switching tabs also disarms.
+
+Single-pane tabs are unchanged (the old "prompt only when a process runs" flow). The focus-mode sidebar shows the same armed state on its rows.
+
+**Logic (platform-agnostic).** A `@Published armedClosePaneID: UUID?` on the tab model. `requestClosePane` checks whether the tab has >1 leaf: if so, clicking the ✕ toggles arm/confirm (`armedClosePaneID == surface.id` → show dialog then close; otherwise set it). The armed id is cleared when the pane closes, when `selection` changes (any tab switch), and when the dialog's Cancel is chosen (cleared before the dialog is shown). The dialog always prompts for the armed close — it's the explicit second reminder. `closePaneSkippingConfirm` (aborting a connecting/blank pane) intentionally bypasses all of this.
+
+**macOS→Linux.** Same state + toggle logic in the GTK apprt: a per-surface "armed" id, red CSS border when armed, a two-click close, and a `GtkAlertDialog` on the second click. Clearing rules are identical (on close, on notebook tab switch, on Cancel). No shared-core involvement.
+
+**Verify on Linux.** Split a tab; click ✕ on a pane → red border + red ✕, nothing closes; click ✕ again → confirmation dialog; Close closes it, Cancel disarms. ⌘W/Ctrl+W behaves the same. In a single-pane tab, Ctrl+W closes with the existing running-process prompt. Switching tabs while a pane is armed disarms it.
+
 ## Appendix A. Visual design reference
 
 This appendix documents the concrete visual specification of the macOS "Vaults" host-manager surfaces so a GTK/Adwaita implementation can match the look. Values are extracted verbatim from the SwiftUI source under `macos/Sources/Features/HostManager/`. Where a value is not present in source, it is marked **"not specified in source."**

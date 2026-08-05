@@ -114,6 +114,10 @@ private struct VaultsSplitLeaf: View {
     @State private var headerDragging: Bool = false
     @State private var headerHovering: Bool = false
 
+    /// This pane's ✕ was clicked once in a split tab — it's armed for closing
+    /// (red border + persistent red ✕) and needs a second click to confirm.
+    private var isArmed: Bool { tabs.armedClosePaneID == surfaceView.id }
+
     var body: some View {
         Group {
             if showHeader {
@@ -130,10 +134,10 @@ private struct VaultsSplitLeaf: View {
                 .overlay(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .strokeBorder(
-                            isFocused ? Color.accentColor : Color.secondary.opacity(0.4),
+                            isArmed ? Color.red : (isFocused ? Color.accentColor : Color.secondary.opacity(0.4)),
                             style: StrokeStyle(
-                                lineWidth: isFocused ? 1.5 : 1,
-                                dash: isFocused ? [] : [4, 3]
+                                lineWidth: isArmed ? 2 : (isFocused ? 1.5 : 1),
+                                dash: isArmed ? [] : (isFocused ? [] : [4, 3])
                             )
                         )
                 )
@@ -302,7 +306,15 @@ private struct VaultsSplitLeaf: View {
             headerButton("sidebar.left", help: "Focus mode (⌘⇧M)") {
                 VaultsTabsModel.shared.toggleFocusMode()
             }
-            PaneCloseButton {
+            if isArmed {
+                Text(loc(.click_close_again))
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 7).padding(.vertical, 3)
+                    .background(Capsule().fill(Color.red))
+                    .fixedSize()
+            }
+            PaneCloseButton(armed: isArmed) {
                 VaultsTabsModel.shared.requestClosePane(surface: surfaceView)
             }
         }
@@ -332,23 +344,25 @@ private struct VaultsSplitLeaf: View {
 }
 
 /// Pane-close ✕ that turns red on hover — same affordance as the tab chip's
-/// close button.
+/// close button. When `armed` (first click in a split tab) it stays red and
+/// reads as "click again to confirm".
 private struct PaneCloseButton: View {
+    let armed: Bool
     let action: () -> Void
     @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: "xmark")
+            Image(systemName: armed ? "xmark.circle.fill" : "xmark")
                 .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(hovering ? Color.white : .white.opacity(0.75))
+                .foregroundStyle(hovering || armed ? Color.white : .white.opacity(0.75))
                 .frame(width: 20, height: 18)
-                .background(RoundedRectangle(cornerRadius: 4).fill(hovering ? Color.red : .clear))
+                .background(RoundedRectangle(cornerRadius: 4).fill(hovering || armed ? Color.red : .clear))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .hoverTipText("Close pane")
+        .hoverTipText(armed ? loc(.click_close_again) : loc(.close_pane))
     }
 }
 

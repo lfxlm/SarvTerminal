@@ -36,6 +36,7 @@ records the final working logic — not intermediate churn. See `AGENTS.md`
 | 7 | `dbd60c5` | `feat(vaults): broadcast input warning pill with one-click exit; data-load-failure banners for data-backed sections; SFTP empty-folder state + loading overlay` |
 | 8 | `390e3fc` | `feat(vaults): palette defaults to first matching host; port-forward validation + run-state filter + start/stop all; snippets one-click run in focused terminal` |
 | 9 | `7463c52` | `feat(vaults): two-stage pane close in split view (arm → confirm dialog); focus-mode sidebar shows the armed state` |
+| 10 | `a227822` | `feat(vaults): manual "Reconnect SSH Session" from terminal + tab context menus (confirm, then relaunch ssh in place)` |
 
 ---
 

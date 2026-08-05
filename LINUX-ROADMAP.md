@@ -39,6 +39,7 @@ records the final working logic — not intermediate churn. See `AGENTS.md`
 | 10 | `a227822` | `feat(vaults): manual "Reconnect SSH Session" from terminal + tab context menus (confirm, then relaunch ssh in place)` |
 | 11 | `db2e996` | `feat(vaults): closing an SSH split pane swaps it into a "Choose a new connection" chooser (pick a new host or dismiss to close)` |
 | 12 | `fcd1ee6` | `feat(vaults): host reachability dots; Docker/K8s attach over SSH with sudo-n fallback + fix hint; Server Monitor section (CPU/mem/disk/GPU)` |
+| 13 | `bd2ab40` | `fix(vaults): reachability probes the proxyJump bastion for jump hosts; add Server Monitor tab to the command sidebar` |
 
 ---
 

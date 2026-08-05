@@ -15,8 +15,10 @@ enum ServerMonitorService {
     }
 
     /// The remote script — one labeled line per metric so a single ssh call
-    /// returns everything. All pieces are POSIX-portable (top/free/df/uptime/
-    /// nproc + nvidia-smi).
+    /// returns everything. All pieces are POSIX-portable; memory comes from
+    /// `/proc/meminfo` (present on every Linux), not `free` (absent on minimal
+    /// images / busybox). Values: CPU%, load, cores, MEM=totalKB usedKB,
+    /// DISK, GPU.
     private static let script = """
     echo "HOST:$(hostname 2>/dev/null)"
     echo "OS:$(sed -n 's/^PRETTY_NAME="\\(.*\\)"/\\1/p' /etc/os-release 2>/dev/null)"
@@ -24,7 +26,7 @@ enum ServerMonitorService {
     echo "LOAD:$(uptime | sed 's/.*load average: //' 2>/dev/null)"
     echo "CORES:$(nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null)"
     echo "CPU:$(top -bn1 2>/dev/null | awk '/%Cpu/{print 100-$8}')"
-    echo "MEM:$(free -m 2>/dev/null | awk '/Mem:/{print $2,$3}')"
+    echo "MEM:$(awk '/^MemTotal:/{t=$2} /^MemAvailable:/{a=$2} END{print t, t-a}' /proc/meminfo 2>/dev/null)"
     echo "DISK:$(df -h / 2>/dev/null | awk 'NR==2{print $2,$3,$5}')"
     echo "GPU:$(nvidia-smi --query-gpu=name,memory.used,memory.total,utilization.gpu,temperature.gpu --format=csv,noheader,nounits 2>/dev/null | head -1)"
     echo "GPUERR:$(nvidia-smi 2>&1 >/dev/null | head -1)"
@@ -55,10 +57,12 @@ enum ServerMonitorService {
         if let cpu = rows["CPU"]?.replacingOccurrences(of: ",", with: "."),
            let pct = Double(cpu) { m.cpuPercent = min(max(pct, 0), 100) }
         if let mem = rows["MEM"] {
+            // `/proc/meminfo` gives kB: `total used`.
             let parts = mem.split(separator: " ")
-            if parts.count >= 2 {
-                m.memTotalMB = Int64(parts[0]) ?? 0
-                m.memUsedMB = Int64(parts[1]) ?? 0
+            if parts.count >= 2,
+               let totalKB = Int64(parts[0]), let usedKB = Int64(parts[1]) {
+                m.memTotalMB = totalKB / 1024
+                m.memUsedMB = usedKB / 1024
             }
         }
         if let disk = rows["DISK"] {
@@ -112,9 +116,10 @@ struct ServerMetrics: Equatable {
         return min(Double(memUsedMB) / Double(memTotalMB), 1.0)
     }
     var memText: String {
-        memTotalMB > 0
-            ? "\(ByteCountFormatter.string(fromByteCount: memUsedMB * 1_000_000, countStyle: .memory)) / \(ByteCountFormatter.string(fromByteCount: memTotalMB * 1_000_000, countStyle: .memory))"
-            : ""
+        guard memTotalMB > 0 else { return "—" }
+        let total = ByteCountFormatter.string(fromByteCount: memTotalMB * 1_048_576, countStyle: .memory)
+        let used = ByteCountFormatter.string(fromByteCount: memUsedMB * 1_048_576, countStyle: .memory)
+        return "\(used) / \(total)"
     }
     var diskPercentNum: Double? {
         Double(diskPercent.dropLast())

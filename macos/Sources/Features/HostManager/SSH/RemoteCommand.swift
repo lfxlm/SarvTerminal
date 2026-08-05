@@ -34,11 +34,12 @@ enum RemoteCommand {
     }
 
     /// Run `command` on the remote host. Best-effort — failures come back as a
-    /// non-zero status with stderr, never thrown.
-    static func run(host: SavedHost, command: String) async -> Result {
+    /// non-zero status with stderr, never thrown. `stdin` (e.g. a sudo password
+    /// for `sudo -S`) is piped to the remote command through ssh's stdin.
+    static func run(host: SavedHost, command: String, stdin: String? = nil) async -> Result {
         let askpassEnv = SSHAskpass.env(forPassword: host.password)
         let args = sshOptions(for: host) + [target(host), command]
-        let res = (try? await RemoteFileBackend.runProcess("/usr/bin/ssh", args, env: askpassEnv))
+        let res = (try? await RemoteFileBackend.runProcess("/usr/bin/ssh", args, env: askpassEnv, stdin: stdin))
         if let file = askpassEnv["SARV_ASKPASS_FILE"] {
             try? FileManager.default.removeItem(atPath: file)
         }

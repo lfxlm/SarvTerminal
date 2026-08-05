@@ -2029,6 +2029,18 @@ Clicking confirms first ("Disconnect the current session to 'host' and open a fr
 
 **Verify on Linux.** Open an SSH tab, then the Monitor/Containers panels → they show THAT server with no selection. Switch to another SSH tab → they follow. Kill the docker daemon on the host → the panel says "daemon isn't running" with the start command; remove docker → "not installed"; run as a user without the docker group and no passwordless sudo → the permission reason + fix appears.
 
+## 49. Docker sudo password + monitor memory from /proc/meminfo
+
+**What it is.** Two bug fixes:
+- **Docker no longer needs a separately-typed sudo password.** The SSH and sudo passwords are the same account, so when `docker ps` hits the permission wall the panel now pipes the saved host password to `sudo -S` over ssh's stdin (no password in the command line, non-interactive). Hosts without a stored password fall back to `sudo -n`. Attach commands use interactive `sudo` (not `sudo -n`) since the attach tab is a real terminal where sudo can prompt.
+- **Monitor memory always shows.** The monitor script read `free -m`, which is absent on minimal images / busybox servers, so memory silently rendered as an empty bar. It now reads `/proc/meminfo` (`MemTotal`/`MemAvailable`, always present on Linux) and reports kB, converted to MB.
+
+**Logic (platform-agnostic).** `sudo -S` reads its password from stdin; ssh forwards the app-provided stdin to the remote command, so `ssh host sudo -S docker ps` + `stdin="<password>\n"` authenticates without any interactive prompt or password-in-argv. `dockerUnavailableReason` still classifies failures (installed/daemon/permission) for the hint. The process runner gained an optional `stdin` parameter (written after `proc.run()`, small payload, never blocks the pipe).
+
+**macOS→Linux.** Identical: `GSubprocess` with a stdin `GOutputStream` feeding `sudo -S`, and `/proc/meminfo` parsing. No platform APIs.
+
+**Verify on Linux.** A password-auth host whose user is NOT in the docker group: the panel lists containers using the saved password via `sudo -S` — no prompt, no password typed. A key-auth host without NOPASSWD still shows the permission reason (no password to feed). On a minimal server without `free`, Memory now shows used/total from `/proc/meminfo`.
+
 ## Appendix A. Visual design reference
 
 This appendix documents the concrete visual specification of the macOS "Vaults" host-manager surfaces so a GTK/Adwaita implementation can match the look. Values are extracted verbatim from the SwiftUI source under `macos/Sources/Features/HostManager/`. Where a value is not present in source, it is marked **"not specified in source."**

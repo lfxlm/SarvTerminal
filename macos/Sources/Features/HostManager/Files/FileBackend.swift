@@ -355,7 +355,8 @@ final class RemoteFileBackend: FileBackend {
         }
     }
 
-    static func runProcess(_ launchPath: String, _ args: [String], env: [String: String]) async throws -> ProcessResult {
+    static func runProcess(_ launchPath: String, _ args: [String], env: [String: String],
+                           stdin: String? = nil) async throws -> ProcessResult {
         let box = ProcessBox()
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { cont in
@@ -369,9 +370,18 @@ final class RemoteFileBackend: FileBackend {
                     let outPipe = Pipe(), errPipe = Pipe()
                     proc.standardOutput = outPipe
                     proc.standardError = errPipe
-                    proc.standardInput = FileHandle.nullDevice
+                    let inPipe = Pipe()
+                    // `stdin` feeds the child's standard input (e.g. a password
+                    // piped to `sudo -S` over ssh). Written after run() so the
+                    // child's stdin pipe is already connected — a small payload
+                    // never blocks the 64KB pipe buffer.
+                    proc.standardInput = stdin == nil ? FileHandle.nullDevice : inPipe
                     box.attach(proc)   // lets a cancel terminate it
                     do { try proc.run() } catch { cont.resume(throwing: error); return }
+                    if let stdin {
+                        inPipe.fileHandleForWriting.write(Data(stdin.utf8))
+                        inPipe.fileHandleForWriting.closeFile()
+                    }
                     let outData = outPipe.fileHandleForReading.readDataToEndOfFile()
                     let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
                     proc.waitUntilExit()

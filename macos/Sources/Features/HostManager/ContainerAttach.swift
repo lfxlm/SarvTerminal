@@ -76,8 +76,8 @@ enum ContainerAttachService {
 
     // MARK: Remote (over SSH to a saved host)
 
-    static func run(host: SavedHost, command: String) async -> (out: String, err: String, code: Int32) {
-        let res = await RemoteCommand.run(host: host, command: command)
+    static func run(host: SavedHost, command: String, stdin: String? = nil) async -> (out: String, err: String, code: Int32) {
+        let res = await RemoteCommand.run(host: host, command: command, stdin: stdin)
         return (res.stdout, res.stderr, res.status)
     }
 
@@ -90,7 +90,15 @@ enum ContainerAttachService {
         var r = await run(host: host, command: "docker ps --format '{{json .}}'")
         if r.code != 0, RemoteCommand.isPermissionDenied(r.err) {
             needsSudo = true
-            r = await run(host: host, command: "sudo -n docker ps --format '{{json .}}'")
+            // The SSH and sudo passwords are the same account: feed the saved
+            // password to `sudo -S` via ssh's stdin. Falls back to passwordless
+            // `sudo -n` for hosts without a stored password.
+            if !host.password.isEmpty {
+                r = await run(host: host, command: "sudo -S docker ps --format '{{json .}}'",
+                              stdin: host.password + "\n")
+            } else {
+                r = await run(host: host, command: "sudo -n docker ps --format '{{json .}}'")
+            }
         }
         guard r.code == 0 else {
             return ([], dockerUnavailableReason(stderr: r.err, needsSudo: needsSudo, hostLabel: host.displayLabel), needsSudo)
@@ -111,7 +119,9 @@ enum ContainerAttachService {
     /// words, so Ghostty's whitespace command-splitting leaves it intact; `-t`
     /// forces a remote tty so `docker exec -it` works.
     static func remoteDockerAttachCommand(host: SavedHost, needsSudo: Bool, _ c: DockerContainer) -> String {
-        let sudo = needsSudo ? "sudo -n " : ""
+        // Interactive `sudo` (not `sudo -n`): the attach tab is a real terminal,
+        // so sudo can prompt for the password there.
+        let sudo = needsSudo ? "sudo " : ""
         let opts = RemoteCommand.sshOptions(for: host).joined(separator: " ")
         return "ssh \(opts) -t \(RemoteCommand.target(host)) \(sudo)docker exec -it \(c.name) sh"
     }
@@ -125,9 +135,10 @@ enum ContainerAttachService {
     }
 
     /// The bare docker/kubectl command typed into an ALREADY-connected terminal
-    /// ("run in current tab" while the user is on the host).
+    /// ("run in current tab" while the user is on the host). Interactive `sudo`
+    /// prompts for the password in the terminal.
     static func dockerAttachTyped(needsSudo: Bool, _ c: DockerContainer) -> String {
-        "\(needsSudo ? "sudo -n " : "")docker exec -it \(c.name) sh"
+        "\(needsSudo ? "sudo " : "")docker exec -it \(c.name) sh"
     }
 
     static func k8sAttachTyped(_ pod: K8sPod, container: String?) -> String {

@@ -42,6 +42,7 @@ records the final working logic — not intermediate churn. See `AGENTS.md`
 | 13 | `bd2ab40` | `fix(vaults): reachability probes the proxyJump bastion for jump hosts; add Server Monitor tab to the command sidebar` |
 | 14 | `eec5ef4` | `feat(vaults): Monitor/Containers auto-target the active SSH server; classify docker failures (not installed / daemon down / permission) with fix hints` |
 | 15 | `0126148` | `fix(vaults): feed saved password to sudo -S over ssh stdin for docker; monitor memory from /proc/meminfo` |
+| 16 | `897e3df` | `feat(vaults): attach shell "Open in split pane" option; attach uses bash; fix GPU VRAM MiB→GiB display` |
 
 ---
 

@@ -119,32 +119,32 @@ enum ContainerAttachService {
     /// words, so Ghostty's whitespace command-splitting leaves it intact; `-t`
     /// forces a remote tty so `docker exec -it` works.
     static func remoteDockerAttachCommand(host: SavedHost, needsSudo: Bool, _ c: DockerContainer) -> String {
-        // Interactive `sudo` (not `sudo -n`): the attach tab is a real terminal,
-        // so sudo can prompt for the password there.
+        // Interactive `sudo` (not `sudo -n`): the attach tab/split is a real
+        // terminal, so sudo can prompt for the password there. Prefers `bash`.
         let sudo = needsSudo ? "sudo " : ""
         let opts = RemoteCommand.sshOptions(for: host).joined(separator: " ")
-        return "ssh \(opts) -t \(RemoteCommand.target(host)) \(sudo)docker exec -it \(c.name) sh"
+        return "ssh \(opts) -t \(RemoteCommand.target(host)) \(sudo)docker exec -it \(c.name) bash"
     }
 
     static func remoteK8sAttachCommand(host: SavedHost, _ pod: K8sPod, container: String?) -> String {
         let opts = RemoteCommand.sshOptions(for: host).joined(separator: " ")
         var cmd = "ssh \(opts) -t \(RemoteCommand.target(host)) kubectl exec -it -n \(pod.namespace) \(pod.name)"
         if let container, !container.isEmpty { cmd += " -c \(container)" }
-        cmd += " -- sh"
+        cmd += " -- bash"
         return cmd
     }
 
     /// The bare docker/kubectl command typed into an ALREADY-connected terminal
     /// ("run in current tab" while the user is on the host). Interactive `sudo`
-    /// prompts for the password in the terminal.
+    /// prompts for the password in the terminal. Prefers `bash`.
     static func dockerAttachTyped(needsSudo: Bool, _ c: DockerContainer) -> String {
-        "\(needsSudo ? "sudo " : "")docker exec -it \(c.name) sh"
+        "\(needsSudo ? "sudo " : "")docker exec -it \(c.name) bash"
     }
 
     static func k8sAttachTyped(_ pod: K8sPod, container: String?) -> String {
         var cmd = "kubectl exec -it -n \(pod.namespace) \(pod.name)"
         if let container, !container.isEmpty { cmd += " -c \(container)" }
-        cmd += " -- sh"
+        cmd += " -- bash"
         return cmd
     }
 
@@ -219,22 +219,19 @@ enum ContainerAttachService {
         return (r.code == 0 && !path.isEmpty) ? path : nil
     }
 
-    /// `<binary> exec -it <name> sh` — a plain single-word shell so the whole
-    /// command is space-separated words with no quoted arguments. Ghostty's
-    /// `command` splits on whitespace and does NOT honor a quoted arg containing
-    /// spaces, so a `sh -c '…'` wrapper gets shredded and never runs. `sh` exists
-    /// in every image (including Alpine); to use bash, run it once inside.
-    /// `binary` is `docker`, or its absolute path for a directly-spawned tab.
+    /// `<binary> exec -it <name> bash` — prefers bash (nicer interactive shell);
+    /// a `bash` fallback to `sh` exists in most images. `binary` is `docker`, or
+    /// its absolute path for a directly-spawned tab/split.
     static func dockerAttachCommand(binary: String, _ c: DockerContainer) -> String {
-        "\(binary) exec -it \(c.name) sh"
+        "\(binary) exec -it \(c.name) bash"
     }
 
-    /// `<binary> exec -it -n <ns> <pod> [-c container] -- sh`.
+    /// `<binary> exec -it -n <ns> <pod> [-c container] -- bash`.
     static func k8sAttachCommand(binary: String, _ pod: K8sPod, container: String?) -> String {
         // Namespace / pod / container names are DNS-1123 safe (no quoting needed).
         var cmd = "\(binary) exec -it -n \(pod.namespace) \(pod.name)"
         if let container, !container.isEmpty { cmd += " -c \(container)" }
-        cmd += " -- sh"
+        cmd += " -- bash"
         return cmd
     }
 
@@ -349,15 +346,15 @@ final class ContainerAttachModel: ObservableObject {
 
     func attach(_ c: DockerContainer, target: AttachTarget) {
         guard let host = resolvedHost else {
-            // Local Mac: new tab spawns the process directly, so it needs the
+            // Local Mac: a directly-spawned process (new tab / split) needs the
             // absolute path (docker isn't on Ghostty's minimal spawn PATH). The
-            // current tab types into an interactive shell that has the full PATH.
-            let binary = target == .newTab ? (dockerPath ?? "docker") : "docker"
+            // current tab types into an interactive shell that has the PATH.
+            let binary = target == .currentTab ? "docker" : (dockerPath ?? "docker")
             open(ContainerAttachService.dockerAttachCommand(binary: binary, c), name: c.name, target: target)
             return
         }
         switch target {
-        case .newTab:
+        case .newTab, .split:
             open(ContainerAttachService.remoteDockerAttachCommand(host: host, needsSudo: dockerNeedsSudo, c),
                  name: c.name, target: target)
         case .currentTab:
@@ -368,13 +365,13 @@ final class ContainerAttachModel: ObservableObject {
 
     func attach(_ pod: K8sPod, container: String?, target: AttachTarget) {
         guard let host = resolvedHost else {
-            let binary = target == .newTab ? (kubectlPath ?? "kubectl") : "kubectl"
+            let binary = target == .currentTab ? "kubectl" : (kubectlPath ?? "kubectl")
             open(ContainerAttachService.k8sAttachCommand(binary: binary, pod, container: container),
                  name: pod.name, target: target)
             return
         }
         switch target {
-        case .newTab:
+        case .newTab, .split:
             open(ContainerAttachService.remoteK8sAttachCommand(host: host, pod, container: container),
                  name: pod.name, target: target)
         case .currentTab:
@@ -389,6 +386,8 @@ final class ContainerAttachModel: ObservableObject {
         switch target {
         case .newTab:
             _ = VaultsTabsModel.shared.newCommandTerminal(command: command, name: name)
+        case .split:
+            _ = VaultsTabsModel.shared.splitCommand(command: command, name: name)
         case .currentTab:
             _ = VaultsTabsModel.shared.runInTargetTerminal(command)
         }
@@ -396,7 +395,7 @@ final class ContainerAttachModel: ObservableObject {
 }
 
 /// Where an attach shell opens.
-enum AttachTarget { case newTab, currentTab }
+enum AttachTarget { case newTab, split, currentTab }
 
 // MARK: - Sidebar tab
 
@@ -596,13 +595,19 @@ struct ContainersTab: View {
         .listRowHover()
     }
 
-    /// The "new tab / current tab" choice shown in every attach menu.
+    /// The "new tab / split / current tab" choice shown in every attach menu.
     @ViewBuilder private func tabTargetButtons(_ action: @escaping (AttachTarget) -> Void) -> some View {
         Button {
             action(.newTab)
         } label: {
             Label("Open in new tab", systemImage: "plus.rectangle.on.rectangle")
         }
+        Button {
+            action(.split)
+        } label: {
+            Label("Open in split pane", systemImage: "rectangle.split.2x1")
+        }
+        .disabled(!model.hasActiveTerminal)
         Button {
             action(.currentTab)
         } label: {

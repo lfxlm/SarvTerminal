@@ -759,6 +759,28 @@ final class VaultsTabsModel: ObservableObject {
         return tab
     }
 
+    /// Split the active terminal and run `command` in the new pane (e.g. a
+    /// docker exec shell). Returns false when there's no active terminal to
+    /// split. Splits along the pane's longer axis; the new pane keeps the given
+    /// name as its sticky title.
+    @discardableResult
+    @MainActor
+    func splitCommand(command: String, name: String) -> Bool {
+        guard let tab = activeTerminal,
+              let anchor = tab.focusedSurface ?? tab.surfaceTree.root?.leftmostLeaf(),
+              let app = (NSApp.delegate as? AppDelegate)?.ghostty.app else { return false }
+        var cfg = Ghostty.SurfaceConfiguration()
+        cfg.command = command
+        let newView = Ghostty.SurfaceView(app, baseConfig: cfg)
+        let direction: SplitTree<Ghostty.SurfaceView>.NewDirection =
+            anchor.bounds.width >= anchor.bounds.height ? .right : .down
+        guard let newTree = try? tab.surfaceTree.inserting(view: newView, at: anchor, direction: direction) else { return false }
+        tab.surfaceTree = newTree
+        tab.paneTitleOverrides[newView.id] = name
+        Ghostty.moveFocus(to: newView)
+        return true
+    }
+
     // MARK: - Staged SSH connection
 
     /// Whether the connection popup should collect a password in a field. Only

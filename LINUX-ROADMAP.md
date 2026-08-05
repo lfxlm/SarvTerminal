@@ -2042,6 +2042,19 @@ Clicking confirms first ("Disconnect the current session to 'host' and open a fr
 
 **Verify on Linux.** A password-auth host whose user is NOT in the docker group: the panel lists containers using the saved password via `sudo -S` — no prompt, no password typed. A key-auth host without NOPASSWD still shows the permission reason (no password to feed). On a minimal server without `free`, Memory now shows used/total from `/proc/meminfo`.
 
+## 50. Attach in a split pane, bash shell, GPU VRAM units
+
+**What it is.** Three attach/monitor refinements:
+- **Attach in a split pane.** The container/pod attach menu now has three targets: **Open in new tab**, **Open in split pane** (a new split in the active window — splits along the pane's longer axis), and **Run in current tab**.
+- **Bash shell.** Attach shells use `bash` instead of `sh` (`docker exec -it <c> bash`, `kubectl exec … -- bash`) — a nicer interactive shell.
+- **GPU VRAM units.** `nvidia-smi` reports memory in **MiB**; the monitor now converts to GiB via `ByteCountFormatter` instead of labelling raw MiB numbers as "GB".
+
+**Logic (platform-agnostic).** `splitCommand(command:name:)` is the same "new surface whose process IS the command" pattern as the new-tab path, but inserts the surface into the active tab's split tree (along the longer axis) and sets a sticky pane title. The attach target enum gained a `.split` case; directly-spawned surfaces use the resolved absolute binary path. GPU parsing keeps the raw MiB ints and formats at display time.
+
+**macOS→Linux.** The split insertion is the shared split-tree API (both apprts use libghostty surfaces); the GTK attach menu just adds the third item. Bash preference and MiB→GiB formatting are plain strings/arithmetic.
+
+**Verify on Linux.** Attach a container → "Open in split pane" splits the current tab and drops you into `bash` inside the container; the pane header shows the container name. GPU monitor on an NVIDIA host shows e.g. "7.4 GB / 24 GB" (correct, not "7551 / 24576").
+
 ## Appendix A. Visual design reference
 
 This appendix documents the concrete visual specification of the macOS "Vaults" host-manager surfaces so a GTK/Adwaita implementation can match the look. Values are extracted verbatim from the SwiftUI source under `macos/Sources/Features/HostManager/`. Where a value is not present in source, it is marked **"not specified in source."**

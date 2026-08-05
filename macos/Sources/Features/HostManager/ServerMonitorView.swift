@@ -77,8 +77,9 @@ enum ServerMonitorService {
             let parts = gpu.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
             if parts.count >= 5 {
                 m.gpuName = parts[0]
-                m.gpuMemUsed = parts[1]
-                m.gpuMemTotal = parts[2]
+                // nvidia-smi reports memory in MiB; store raw and format later.
+                m.gpuMemUsedMiB = Int64(parts[1]) ?? 0
+                m.gpuMemTotalMiB = Int64(parts[2]) ?? 0
                 m.gpuUtil = parts[3]
                 m.gpuTemp = parts[4]
             } else {
@@ -105,8 +106,8 @@ struct ServerMetrics: Equatable {
     var diskUsed: String = ""
     var diskPercent: String = ""
     var gpuName: String = ""
-    var gpuMemUsed: String = ""
-    var gpuMemTotal: String = ""
+    var gpuMemUsedMiB: Int64 = 0
+    var gpuMemTotalMiB: Int64 = 0
     var gpuUtil: String = ""
     var gpuTemp: String = ""
     var error: String?
@@ -369,7 +370,7 @@ struct ServerMonitorView: View {
                 metricCard(
                     icon: "gpu",
                     title: "GPU — \(model.metrics.gpuName)",
-                    detail: "\(model.metrics.gpuMemUsed) / \(model.metrics.gpuMemTotal) GB · \(model.metrics.gpuTemp)°C"
+                    detail: "\(gpuMemText) · \(model.metrics.gpuTemp)°C"
                 ) {
                     gauge(value: Double(model.metrics.gpuUtil).map { $0 / 100 }, color: .purple)
                     Text("Utilization: \(model.metrics.gpuUtil)%")
@@ -377,6 +378,16 @@ struct ServerMonitorView: View {
                 }
             }
         }
+    }
+
+    /// GPU VRAM used/total — nvidia-smi returns MiB; format as GiB properly.
+    private var gpuMemText: String {
+        guard model.metrics.gpuMemTotalMiB > 0 else { return "" }
+        let used = ByteCountFormatter.string(
+            fromByteCount: model.metrics.gpuMemUsedMiB * 1_048_576, countStyle: .memory)
+        let total = ByteCountFormatter.string(
+            fromByteCount: model.metrics.gpuMemTotalMiB * 1_048_576, countStyle: .memory)
+        return "\(used) / \(total)"
     }
 
     private func gauge(value: Double?, color: Color) -> some View {

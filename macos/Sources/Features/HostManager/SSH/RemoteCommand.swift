@@ -12,7 +12,8 @@ enum RemoteCommand {
         let stderr: String
     }
 
-    /// Common ssh options derived from the host (mirrors RemoteFileBackend).
+    /// Common ssh options derived from the host (mirrors RemoteFileBackend),
+    /// plus connection multiplexing so repeated queries share one ssh link.
     static func sshOptions(for host: SavedHost) -> [String] {
         var args: [String] = [
             "-o", "StrictHostKeyChecking=accept-new",
@@ -26,7 +27,36 @@ enum RemoteCommand {
         }
         if !host.proxyJump.isEmpty { args += ["-J", host.proxyJump] }
         if host.forwardAgent { args.append("-A") }
+        args += controlOptions(for: host)
         return args
+    }
+
+    /// OpenSSH connection multiplexing: the first call to a host becomes the
+    /// master connection; later calls to the same host (docker list + pods,
+    /// the sudo fallback, monitor auto-refresh every few seconds) reuse it via
+    /// a control socket — no per-call TCP + ssh handshake. `ControlMaster=auto`
+    /// reuses when available, else starts a fresh master and OpenSSH auto-removes
+    /// a stale socket from a killed master. `ControlPersist=60` keeps the master
+    /// alive 60s after the last use so a 3s refresh loop never reconnects.
+    ///
+    /// The socket lives in a SHORT path (`/tmp`): OpenSSH appends a random
+    /// suffix to the ControlPath, and a socket path can be at most 104 bytes —
+    /// macOS's `NSTemporaryDirectory()` (`/var/folders/…/T/`) is too long and
+    /// fails with "too long for Unix domain socket".
+    private static func controlOptions(for host: SavedHost) -> [String] {
+        let dir = "/tmp/sarv-ssh-ctrl"
+        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true,
+                                                 attributes: [.posixPermissions: 0o700])
+        let key = "\(host.username)@\(host.hostname):\(host.port)"
+        var hash = UInt64(1469598103934665603)   // FNV-1a
+        for byte in key.utf8 {
+            hash ^= UInt64(byte)
+            hash &*= 1099511628211
+        }
+        let socket = "\(dir)/sarv-\(String(format: "%08x", hash & 0xFFFFFFFF)).sock"
+        return ["-o", "ControlMaster=auto",
+                "-o", "ControlPath=\(socket)",
+                "-o", "ControlPersist=60"]
     }
 
     static func target(_ host: SavedHost) -> String {

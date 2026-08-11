@@ -4380,6 +4380,35 @@ fn linkAtPin(
 ) !?Link {
     if (self.config.links.len == 0) return null;
 
+    // When this is a hover lookup (mouse_mods set) and NO configured link
+    // highlights for the current modifiers, return immediately — BEFORE
+    // extracting the line text or running any regex. This keeps plain hover
+    // at zero cost when nothing is hoverable, while mod-hold / activation
+    // lookups still run. `.hover_activate_mods` links highlight on plain
+    // hover (always relevant for hover) but only OPEN on the mod-click.
+    if (mouse_mods) |mods| {
+        var relevant = false;
+        for (self.config.links) |link| switch (link.highlight) {
+            .always, .hover => {
+                relevant = true;
+                break;
+            },
+            .always_mods, .hover_mods => |v| if (v.equal(mods)) {
+                relevant = true;
+                break;
+            },
+            .hover_activate_mods => |v| {
+                // Relevant on plain hover (highlight); for activation it must
+                // match the mods (⌘-click to open).
+                if (!for_activation or v.equal(mods)) {
+                    relevant = true;
+                    break;
+                }
+            },
+        };
+        if (!relevant) return null;
+    }
+
     const screen: *terminal.Screen = self.renderer_state.terminal.screens.active;
     const line = screen.selectLine(.{
         .pin = mouse_pin,
@@ -4389,6 +4418,26 @@ fn linkAtPin(
         .semantic_prompt_boundary = true,
     }) orelse return null;
 
+    // Cheap pre-check BEFORE extracting the line text. Binary/garbage output
+    // can produce a single "line" that spans THOUSANDS of rows (no newlines);
+    // `selectionString` would build the entire multi-MB string and freeze the
+    // main thread on every mouse move — before the regex-length cap below even
+    // runs. Real lines are 1–3 rows; anything past a few screens is garbage.
+    {
+        const start_pin = line.start();
+        const end_pin = line.end();
+        const MAX_LINE_ROWS = 100;
+        var rows: u64 = 0;
+        var node = start_pin.node;
+        while (true) {
+            rows += node.rows();
+            if (node == end_pin.node) break;
+            node = node.next orelse break;
+            if (rows > MAX_LINE_ROWS) break;
+        }
+        if (rows > MAX_LINE_ROWS) return null;
+    }
+
     var strmap: terminal.StringMap = undefined;
     self.alloc.free(try screen.selectionString(self.alloc, .{
         .sel = line,
@@ -4396,6 +4445,14 @@ fn linkAtPin(
         .map = &strmap,
     }));
     defer strmap.deinit(self.alloc);
+
+    // Cap how much line text we regex-scan. Binary/garbage output can
+    // produce absurdly long single lines (no newlines), and the link
+    // regexes can still spend a lot of time backtracking on them even with
+    // the retry budget — which freezes the main thread on every mouse move
+    // over such a line. Links on multi-KB lines aren't useful anyway.
+    const MAX_LINK_SCAN_LEN = 16 * 1024;
+    if (strmap.string.len > MAX_LINK_SCAN_LEN) return null;
 
     for (self.config.links) |link| {
         // Skip highlight/mods check when mouse_mods is null (double-click mode)
@@ -4661,14 +4718,18 @@ pub fn cursorPosCallback(
     // 1. mouse reporting is off
     // OR
     // 2. mouse reporting is on and we are not reporting shift to the terminal
-    if ((over_link or
-        self.mouse.link_point == null or
+    // Refresh the hover link only when the cursor moved to a DIFFERENT cell.
+    // Previously this also forced a recheck on every mouse event while over a
+    // link (to catch text changing underneath a still cursor), which ran the
+    // link regex on the main thread per event — making hover feel far less
+    // smooth than plain output (cat). Rechecking on cell change is enough for
+    // interactive use; a link highlight under a motionless cursor simply
+    // updates once the cursor moves.
+    if ((self.mouse.link_point == null or
         (self.mouse.link_point != null and !self.mouse.link_point.?.eql(pos_vp))) and
         (self.io.terminal.flags.mouse_event == .none or
             (self.mouse.mods.shift and !self.mouseShiftCapture(false))))
     {
-        // If we were previously over a link, we always update. We do this so that if the text
-        // changed underneath us, even if the mouse didn't move, we update the URL hints and state
         try self.mouseRefreshLinks(pos, pos_vp, over_link);
     }
 

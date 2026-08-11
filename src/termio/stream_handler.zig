@@ -1187,21 +1187,15 @@ pub const StreamHandler = struct {
             },
         };
 
-        // OSC 7 is a little sketchy because anyone can send any value from
-        // any host (such an SSH session). The best practice terminals follow
-        // is to valid the hostname to be local.
-        const host_valid = internal_os.hostname.isLocal(host) catch |err| switch (err) {
-            error.PermissionDenied,
-            error.Unexpected,
-            => {
-                log.warn("failed to get hostname for OSC 7 validation: {}", .{err});
-                return;
-            },
-        };
-        if (!host_valid) {
-            log.warn("OSC 7 host ({s}) must be local", .{host});
-            return;
-        }
+        // OSC 7 can legitimately arrive from ANY host — an SSH session reports
+        // the REMOTE shell's directory, and a docker-exec'd container reports
+        // its own cwd (this fork's drag-and-drop file upload relies on that).
+        // Validating the hostname strictly against the local machine would
+        // reject every remote/container report, so we accept any host and treat
+        // the reported path as the shell's current directory. Path-opening
+        // actions already verify the path exists before opening, so a spoofed
+        // pwd can't trick the user into opening an unexpected file.
+        log.debug("OSC 7 pwd host={s} (not validated as local)", .{host});
 
         // We need the raw path, which might require unescaping. We try to
         // avoid making any heap allocations by using the stack first.

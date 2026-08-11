@@ -1693,7 +1693,10 @@ extension Ghostty {
                               AIConfigStore.shared.currentSettings != nil else { return }
                         AIAssistModel.shared.recordFailure(
                             exitCode: code,
-                            capturedText: surfaceView.liveScreenText(),
+                            // Bounded tail (not the full scrollback): after a
+                            // large output the scrollback can be tens of MB,
+                            // and dumping it on the main thread freezes the app.
+                            capturedText: surfaceView.liveScreenTail(200),
                             pwd: surfaceView.pwd
                         )
                     }

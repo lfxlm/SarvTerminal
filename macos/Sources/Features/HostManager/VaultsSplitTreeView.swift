@@ -95,6 +95,7 @@ private struct VaultsSplitSubtreeView: View {
 private struct VaultsSplitLeaf: View {
     @ObservedObject var surfaceView: Ghostty.SurfaceView
     @ObservedObject private var tabs: VaultsTabsModel = .shared
+    @ObservedObject private var dropFeedback: DropUploadFeedback = .shared
     let isSplit: Bool
     /// Show the per-pane header (only when the tab has more than one pane).
     let showHeader: Bool
@@ -229,9 +230,10 @@ private struct VaultsSplitLeaf: View {
                 // connected and the drawer isn't already open.
                 .overlay(alignment: .bottomTrailing) {
                     if isSSHConnected, !tabs.sftpPanelVisible, !awaiting {
-                        Button { 
-                            tabs.sftpPanelHost = connectedHost
-                            tabs.sftpPanelVisible = true
+                        Button {
+                            if let host = connectedHost {
+                                tabs.openSftpPanel(for: .host(host))
+                            }
                         } label: {
                             Image(systemName: "arrow.up.doc")
                                 .font(.system(size: 11, weight: .medium))
@@ -244,6 +246,13 @@ private struct VaultsSplitLeaf: View {
                         .help("SFTP — upload files to this server")
                         .padding(6)
                         .transition(.scale.combined(with: .opacity))
+                    }
+                }
+                // Drag-and-drop upload progress — floats over the pane the file
+                // was dropped on, auto-dismisses a few seconds after finishing.
+                .overlay(alignment: .bottomLeading) {
+                    if let item = dropFeedback.items[surfaceView.id] {
+                        PaneTransferProgressView(item: item)
                     }
                 }
                 // SFTP side panel is driven by tabs.sftpPanelHost in VaultsRootView

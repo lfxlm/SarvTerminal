@@ -105,6 +105,8 @@ final class SFTPBrowserModel: ObservableObject {
         case .local: backend = LocalFileBackend()
         case .host(let h): backend = RemoteFileBackend(host: h)
         case .smb(let c): backend = SMBFileBackend(connection: c)
+        case .container(let h, let name, let needsSudo):
+            backend = ContainerFileBackend(host: h, container: name, needsSudo: needsSudo)
         }
         selectedIDs.removeAll(keepingCapacity: false)
         history = []

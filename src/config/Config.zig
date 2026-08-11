@@ -3957,6 +3957,10 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
     try result.link.links.append(alloc, .{
         .regex = url.path_regex_hover,
         .action = .{ .open = {} },
+        // Highlight on plain hover (this is what makes file paths feel
+        // clickable); opening still requires the mod-click. The regex cost is
+        // bounded by linkAtPin's line-length caps + cell-change-only rechecks,
+        // so hover stays smooth even during heavy output.
         .highlight = .{ .hover_activate_mods = inputpkg.ctrlOrSuper(.{}) },
     });
     try result.link.links.append(alloc, .{

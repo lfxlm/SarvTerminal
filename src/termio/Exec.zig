@@ -1498,7 +1498,16 @@ pub const ReadThread = struct {
             }
 
             // Batch boundary: hand the renderer state mutex off if
-            // the renderer is waiting. See renderer.State.lockDemand.
+            // a demanding waiter (renderer frame snapshot, main-thread
+            // scroll) is waiting. See renderer.State.lockDemand.
+            //
+            // NOTE: deliberately NOT done per sub-chunk: yielding on every
+            // 16KB during continuous output (fast `cat`, log tails) makes
+            // the renderer's per-frame `lockDemand` stall the parse thread
+            // for the whole frame-build duration each frame, throttling
+            // throughput and making output visibly less smooth than plain
+            // `cat`. Yielding once per batch keeps the same starvation
+            // protection with far less throttling.
             io.renderer_state.yieldToDemand();
         }
     }

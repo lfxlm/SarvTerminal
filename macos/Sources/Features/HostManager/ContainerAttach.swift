@@ -59,7 +59,7 @@ enum ContainerAttachService {
     }
 
     static func listDocker() async -> (items: [DockerContainer], error: String?) {
-        let r = await run("docker ps --format '{{json .}}'")
+        let r = await run("docker ps --format '{{.ID}}|{{.Names}}|{{.Image}}|{{.Status}}'")
         guard r.code == 0 else {
             return ([], dockerUnavailableReason(stderr: r.err, needsSudo: false, hostLabel: "this Mac"))
         }
@@ -67,7 +67,9 @@ enum ContainerAttachService {
     }
 
     static func listPods() async -> (items: [K8sPod], error: String?) {
-        let r = await run("kubectl get pods --all-namespaces -o json")
+        // Gate kubectl on its existence so a server without it fails instantly
+        // (no wasted round-trip / misleading error).
+        let r = await run("if command -v kubectl >/dev/null 2>&1; then kubectl get pods --all-namespaces -o json; fi")
         guard r.code == 0 else {
             return ([], cleanError(r.err, fallback: "kubectl isn't available."))
         }
@@ -87,17 +89,17 @@ enum ContainerAttachService {
     /// with the fix hint.
     static func listDocker(host: SavedHost) async -> (items: [DockerContainer], error: String?, needsSudo: Bool) {
         var needsSudo = false
-        var r = await run(host: host, command: "docker ps --format '{{json .}}'")
+        var r = await run(host: host, command: "docker ps --format '{{.ID}}|{{.Names}}|{{.Image}}|{{.Status}}'")
         if r.code != 0, RemoteCommand.isPermissionDenied(r.err) {
             needsSudo = true
             // The SSH and sudo passwords are the same account: feed the saved
             // password to `sudo -S` via ssh's stdin. Falls back to passwordless
             // `sudo -n` for hosts without a stored password.
             if !host.password.isEmpty {
-                r = await run(host: host, command: "sudo -S docker ps --format '{{json .}}'",
+                r = await run(host: host, command: "sudo -S docker ps --format '{{.ID}}|{{.Names}}|{{.Image}}|{{.Status}}'",
                               stdin: host.password + "\n")
             } else {
-                r = await run(host: host, command: "sudo -n docker ps --format '{{json .}}'")
+                r = await run(host: host, command: "sudo -n docker ps --format '{{.ID}}|{{.Names}}|{{.Image}}|{{.Status}}'")
             }
         }
         guard r.code == 0 else {
@@ -107,7 +109,8 @@ enum ContainerAttachService {
     }
 
     static func listPods(host: SavedHost) async -> (items: [K8sPod], error: String?) {
-        let r = await run(host: host, command: "kubectl get pods --all-namespaces -o json")
+        let r = await run(host: host,
+                          command: "if command -v kubectl >/dev/null 2>&1; then kubectl get pods --all-namespaces -o json; fi")
         guard r.code == 0 else {
             return ([], cleanError(r.err, fallback: "kubectl isn't available on \(host.displayLabel)."))
         }
@@ -118,7 +121,19 @@ enum ContainerAttachService {
     /// ("run in current tab" while the user is on the host). Interactive `sudo`
     /// prompts for the password in the terminal. Prefers `bash`.
     static func dockerAttachTyped(needsSudo: Bool, _ c: DockerContainer) -> String {
-        "\(needsSudo ? "sudo " : "")docker exec -it \(c.name) bash"
+        dockerExec(needsSudo: needsSudo, name: c.name, binary: "docker")
+    }
+
+    /// `<binary> exec -it <name> bash` — prefers bash (nicer interactive shell);
+    /// a `bash` fallback to `sh` exists in most images. `binary` is `docker`, or
+    /// its absolute path for a directly-spawned tab/split.
+    static func dockerAttachCommand(binary: String, _ c: DockerContainer) -> String {
+        dockerExec(needsSudo: false, name: c.name, binary: binary)
+    }
+
+    /// `[sudo] docker exec -it <name> bash`.
+    private static func dockerExec(needsSudo: Bool, name: String, binary: String) -> String {
+        "\(needsSudo ? "sudo " : "")\(binary) exec -it \(name) bash"
     }
 
     static func k8sAttachTyped(_ pod: K8sPod, container: String?) -> String {
@@ -133,14 +148,13 @@ enum ContainerAttachService {
     private static func parseDocker(_ out: String) -> [DockerContainer] {
         var result: [DockerContainer] = []
         for line in out.split(separator: "\n") {
-            guard let data = line.data(using: .utf8),
-                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let id = obj["ID"] as? String, !id.isEmpty else { continue }
+            let parts = line.split(separator: "|", omittingEmptySubsequences: false).map(String.init)
+            guard parts.count >= 4, !parts[1].isEmpty else { continue }
             result.append(DockerContainer(
-                id: id,
-                name: (obj["Names"] as? String) ?? id,
-                image: (obj["Image"] as? String) ?? "",
-                status: (obj["Status"] as? String) ?? ""
+                id: parts[0],
+                name: parts[1],
+                image: parts[2],
+                status: parts[3]
             ))
         }
         return result
@@ -197,13 +211,6 @@ enum ContainerAttachService {
         let r = await run("command -v \(tool)")
         let path = r.out.trimmingCharacters(in: .whitespacesAndNewlines)
         return (r.code == 0 && !path.isEmpty) ? path : nil
-    }
-
-    /// `<binary> exec -it <name> bash` — prefers bash (nicer interactive shell);
-    /// a `bash` fallback to `sh` exists in most images. `binary` is `docker`, or
-    /// its absolute path for a directly-spawned tab/split.
-    static func dockerAttachCommand(binary: String, _ c: DockerContainer) -> String {
-        "\(binary) exec -it \(c.name) bash"
     }
 
     /// `<binary> exec -it -n <ns> <pod> [-c container] -- bash`.
@@ -282,45 +289,79 @@ final class ContainerAttachModel: ObservableObject {
     func selectScope(_ scope: Scope) {
         guard self.scope != scope else { return }
         self.scope = scope
-        reset()
-    }
-
-    private func reset() {
-        dockerContainers = []
-        pods = []
-        dockerError = nil
-        k8sError = nil
-        dockerNeedsSudo = false
         refresh()
     }
 
+    /// Last fetched results per scope — republished instantly on refresh so the
+    /// list appears immediately (with a spinner) instead of a blank panel while
+    /// the probe round-trip runs.
+    private struct HostCache {
+        var containers: [DockerContainer]
+        var pods: [K8sPod]
+        var dockerError: String?
+        var k8sError: String?
+        var needsSudo: Bool
+    }
+    private var caches: [String: HostCache] = [:]
+
+    private var cacheKey: String {
+        if let host = resolvedHost { return host.id.uuidString }
+        return "local"
+    }
+
+    /// Bumped on every refresh; results from a superseded refresh are discarded
+    /// so switching servers can't land stale data from the previous one.
+    private var refreshGeneration = 0
+
     func refresh() {
-        guard !loading else { return }
+        refreshGeneration += 1
+        let gen = refreshGeneration
         loading = true
-        Task { @MainActor in
-            if let host = resolvedHost {
-                let (docker, dErr, dSudo) = await ContainerAttachService.listDocker(host: host)
-                let (k8s, kErr) = await ContainerAttachService.listPods(host: host)
-                dockerContainers = docker
-                dockerError = dErr
-                dockerNeedsSudo = dSudo
-                pods = k8s
-                k8sError = kErr
+        // Publish the cached result for this scope immediately — the list shows
+        // up instantly (dimmed behind the loading spinner) and only then updates
+        // when the fresh probe lands.
+        if let cache = caches[cacheKey] {
+            self.dockerContainers = cache.containers
+            self.pods = cache.pods
+            self.dockerError = cache.dockerError
+            self.k8sError = cache.k8sError
+            self.dockerNeedsSudo = cache.needsSudo
+        }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            if let host = self.resolvedHost {
+                // Parallel docker + k8s over ONE multiplexed ssh connection —
+                // both finish in roughly a single round-trip.
+                async let dockerR = ContainerAttachService.listDocker(host: host)
+                async let podsR = ContainerAttachService.listPods(host: host)
+                let (docker, dErr, dSudo) = await dockerR
+                let (pods, kErr) = await podsR
+                guard gen == self.refreshGeneration else { return }   // stale
+                self.caches[self.cacheKey] = HostCache(containers: docker, pods: pods,
+                                                       dockerError: dErr, k8sError: kErr, needsSudo: dSudo)
+                self.dockerContainers = docker
+                self.dockerError = dErr
+                self.dockerNeedsSudo = dSudo
+                self.pods = pods
+                self.k8sError = kErr
             } else {
                 async let dockerResult = ContainerAttachService.listDocker()
                 async let podResult = ContainerAttachService.listPods()
                 async let dockerBin = ContainerAttachService.resolve("docker")
                 async let kubectlBin = ContainerAttachService.resolve("kubectl")
                 let (docker, k8s, dPath, kPath) = await (dockerResult, podResult, dockerBin, kubectlBin)
-                dockerContainers = docker.items
-                dockerError = docker.error
-                pods = k8s.items
-                k8sError = k8s.error
-                dockerPath = dPath
-                kubectlPath = kPath
+                guard gen == self.refreshGeneration else { return }   // stale
+                self.caches[self.cacheKey] = HostCache(containers: docker.items, pods: k8s.items,
+                                                       dockerError: docker.error, k8sError: k8s.error, needsSudo: false)
+                self.dockerContainers = docker.items
+                self.dockerError = docker.error
+                self.pods = k8s.items
+                self.k8sError = k8s.error
+                self.dockerPath = dPath
+                self.kubectlPath = kPath
             }
-            loading = false
-            loadedOnce = true
+            self.loading = false
+            self.loadedOnce = true
         }
     }
 
@@ -335,16 +376,30 @@ final class ContainerAttachModel: ObservableObject {
         }
         // Remote: "copy the current session" — open a new tab/split that
         // auto-connects to `host` with the saved password, then runs the docker
-        // command in the remote shell. Current tab types it into the shell.
+        // command in the remote shell. When sudo is needed, hand over the saved
+        // password so the app can answer the sudo prompt automatically.
         let cmd = ContainerAttachService.dockerAttachTyped(needsSudo: dockerNeedsSudo, c)
+        let sudoPassword = dockerNeedsSudo ? host.password : nil
         switch target {
         case .newTab:
-            _ = VaultsTabsModel.shared.openSSHTab(host: host, name: c.name, startupCommand: cmd)
+            _ = VaultsTabsModel.shared.openSSHTab(host: host, name: c.name,
+                                                  startupCommand: cmd, sudoPassword: sudoPassword)
         case .split:
-            _ = VaultsTabsModel.shared.openSSHSplit(host: host, name: c.name, startupCommand: cmd)
+            _ = VaultsTabsModel.shared.openSSHSplit(host: host, name: c.name,
+                                                    startupCommand: cmd, sudoPassword: sudoPassword)
         case .currentTab:
             _ = VaultsTabsModel.shared.runInTargetTerminal(cmd)
         }
+    }
+
+    /// Open the SFTP side panel rooted INSIDE `c` — a container-aware file
+    /// browser (`docker exec`/`docker cp`) for uploading files into it without
+    /// guessing the attached shell's cwd.
+    func openContainerFiles(_ c: DockerContainer) {
+        guard let host = resolvedHost else { return }
+        let location = FileLocation.container(host: host, name: c.name, needsSudo: dockerNeedsSudo)
+        VaultsTabsModel.shared.openSftpPanel(for: location)
+        HostManagerController.shared.show()
     }
 
     func attach(_ pod: K8sPod, container: String?, target: AttachTarget) {
@@ -496,18 +551,28 @@ struct ContainersTab: View {
     private var dockerSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             sectionHeader("Docker", systemImage: "cube.box", count: model.dockerContainers.count)
-            if let err = model.dockerError {
+            if model.loading {
+                emptyNote("Loading…")
+            } else if let err = model.dockerError {
                 emptyNote(err)
             } else if model.dockerContainers.isEmpty {
-                emptyNote(model.loadedOnce
-                          ? (model.resolvedHost != nil
-                             ? "No running containers on \(model.resolvedHost!.displayLabel)."
-                             : "No running containers.")
-                          : "Loading…")
+                if let host = model.resolvedHost {
+                    emptyNote("No running containers on \(host.displayLabel).")
+                } else {
+                    emptyNote("No running containers.")
+                }
             } else {
                 ForEach(model.dockerContainers) { c in
                     row(title: c.name, subtitle: subtitle(c.image, c.status)) {
                         tabTargetButtons { model.attach(c, target: $0) }
+                        Divider()
+                        Button {
+                            model.openContainerFiles(c)
+                        } label: {
+                            Label("Upload files", systemImage: "arrow.up.doc")
+                        }
+                        .disabled(model.resolvedHost == nil)
+                        .help(model.resolvedHost == nil ? "Pick a server scope to upload into a container" : "Browse & upload files into this container")
                     }
                 }
             }
@@ -520,10 +585,12 @@ struct ContainersTab: View {
     private var k8sSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             sectionHeader("Kubernetes", systemImage: "helm", count: model.pods.count)
-            if let err = model.k8sError {
+            if model.loading {
+                emptyNote("Loading…")
+            } else if let err = model.k8sError {
                 emptyNote(err)
             } else if model.pods.isEmpty {
-                emptyNote(model.loadedOnce ? "No pods found." : "Loading…")
+                emptyNote("No pods found.")
             } else {
                 ForEach(model.pods) { pod in
                     if pod.containers.count > 1 {

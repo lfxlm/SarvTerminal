@@ -32,12 +32,15 @@ enum FileLocation: Equatable {
     case local
     case host(SavedHost)
     case smb(SMBConnection)
+    /// A docker container on `host` (via `docker exec` / `docker cp`).
+    case container(host: SavedHost, name: String, needsSudo: Bool)
 
     var title: String {
         switch self {
         case .local: return "Local"
         case .host(let h): return h.displayLabel
         case .smb(let c): return c.displayTitle
+        case .container(_, let name, _): return "\(name) (container)"
         }
     }
 
@@ -49,6 +52,7 @@ enum FileLocation: Equatable {
         case .local: return "__local__"
         case .host(let h): return h.id.uuidString
         case .smb(let c): return "smb-\(c.id.uuidString)"
+        case .container(let h, let name, _): return "container-\(h.id.uuidString)-\(name)"
         }
     }
 }

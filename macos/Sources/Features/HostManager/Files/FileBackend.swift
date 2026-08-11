@@ -134,7 +134,7 @@ final class LocalFileBackend: FileBackend {
 
 // MARK: - Remote (ssh / scp)
 
-final class RemoteFileBackend: FileBackend {
+final class RemoteFileBackend: FileBackend, SFTPTransferSource {
     let location: FileLocation
     private let host: SavedHost
     /// askpass env so ssh/scp can authenticate non-interactively. Built once.

@@ -86,7 +86,10 @@ mouse_shape: mouse.Shape = .text,
 /// Per-session Glyph Protocol registrations.
 glyph_glossary: glyph.Glossary = .empty,
 
-/// These are just a packed set of flags we may set on the terminal.
+/// Rate-limit "malformed/garbage input" warnings: binary output can
+/// otherwise flood the log sink and slow the parse thread.
+garbage_warnings: u8 = 0,
+
 flags: packed struct {
     // This supports a Kitty extension where programs using semantic
     // prompts (OSC133) can annotate their new prompts with `redraw=0` to
@@ -1132,7 +1135,10 @@ pub fn print(self: *Terminal, c: u21) !void {
         // characters are ALWAYS attached to some other non-zero-width
         // character at the time of writing.
         if (self.screens.active.cursor.x == 0 and left == 1) {
-            log.warn("zero-width character with no prior character, ignoring", .{});
+            if (self.garbage_warnings < 20) {
+                self.garbage_warnings += 1;
+                log.warn("zero-width character with no prior character, ignoring", .{});
+            }
             return;
         }
 
@@ -1145,7 +1151,10 @@ pub fn print(self: *Terminal, c: u21) !void {
 
         // If our previous cell has no text, just ignore the zero-width character
         if (!prev.hasText()) {
-            log.warn("zero-width character with no prior character, ignoring", .{});
+            if (self.garbage_warnings < 20) {
+                self.garbage_warnings += 1;
+                log.warn("zero-width character with no prior character, ignoring", .{});
+            }
             return;
         }
 

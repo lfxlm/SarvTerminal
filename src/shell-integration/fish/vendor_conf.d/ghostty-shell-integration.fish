@@ -132,6 +132,12 @@ function __ghostty_setup --on-event fish_prompt -d "Setup ghostty integration"
             contains ssh-terminfo $features; or set -a flags --terminfo=false
             set -l ghostty_exe "$GHOSTTY_EXE"
             test -z "$ghostty_exe"; and set ghostty_exe "$GHOSTTY_BIN_DIR/ghostty"
+            # This fork's macOS bundle binary is `SarvTerminal`, not `ghostty`.
+            # Shells spawned by an older build only have GHOSTTY_BIN_DIR (no
+            # GHOSTTY_EXE), so fall back to the fork's real binary name.
+            if not test -x "$ghostty_exe"
+                test -x "$GHOSTTY_BIN_DIR/SarvTerminal"; and set ghostty_exe "$GHOSTTY_BIN_DIR/SarvTerminal"
+            end
             "$ghostty_exe" +ssh $flags -- $argv
         end
     end

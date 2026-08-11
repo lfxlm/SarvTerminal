@@ -49,6 +49,11 @@ final class SSHConnectionModel: ObservableObject {
     /// no field and shows no card while connecting.
     @Published var silent: Bool
 
+    /// When set (the docker-attach "copy session" flow), the app watches the
+    /// fresh shell for a sudo password prompt and auto-types this password into
+    /// it — so `sudo docker exec …` doesn't stall waiting for input.
+    var sudoAutoPassword: String?
+
     /// Curated, in-memory connection log shown in the "Show logs" panel — built
     /// from synthesized milestones and the real terminal error. No file on disk.
     @Published var logEntries: [SSHLogEntry] = []

@@ -2,6 +2,9 @@ import SwiftUI
 import UserNotifications
 import GhosttyKit
 import System
+#if canImport(AppKit)
+import AppKit
+#endif
 
 extension Ghostty {
     /// Render a terminal for the active app in the environment.
@@ -443,6 +446,87 @@ extension Ghostty {
         }
     }
 
+    #if canImport(AppKit)
+    /// The search input, backed by a real `NSTextField`.
+    ///
+    /// The plain SwiftUI `TextField` + `@FocusState` combo in this overlay never
+    /// reliably makes the field the first responder — ⌘V paste and arrow-key
+    /// cursor movement kept falling through to the terminal surface. This
+    /// representable explicitly calls `window.makeFirstResponder` whenever
+    /// `focusNonce` changes (overlay appear + every ⌘F re-press), and wires the
+    /// field editor's Enter/Shift-Enter/Escape directly.
+    struct FocusableSearchField: NSViewRepresentable {
+        @Binding var text: String
+        @Binding var selection: Range<String.Index>?
+        var focusNonce: Int
+        var onSubmit: (_ shift: Bool) -> Void
+        var onCancel: () -> Void
+
+        func makeNSView(context: Context) -> NSTextField {
+            let field = NSTextField()
+            field.placeholderString = "Search"
+            field.isBordered = false
+            field.drawsBackground = false
+            field.focusRingType = .none
+            field.font = .systemFont(ofSize: 13)
+            field.delegate = context.coordinator
+            return field
+        }
+
+        func updateNSView(_ field: NSTextField, context: Context) {
+            if field.stringValue != text {
+                field.stringValue = text
+            }
+            if context.coordinator.lastNonce != focusNonce {
+                context.coordinator.lastNonce = focusNonce
+                DispatchQueue.main.async {
+                    field.window?.makeFirstResponder(field)
+                }
+            }
+            if let selection {
+                let ns = NSRange(selection, in: text)
+                if let editor = field.currentEditor() as? NSTextView,
+                   editor.selectedRange() != ns {
+                    editor.setSelectedRange(ns)
+                }
+            }
+        }
+
+        static func dismantleNSView(_ field: NSTextField, coordinator: Coordinator) {
+            field.delegate = nil
+        }
+
+        func makeCoordinator() -> Coordinator {
+            Coordinator(self)
+        }
+
+        final class Coordinator: NSObject, NSTextFieldDelegate {
+            var parent: FocusableSearchField
+            var lastNonce = -1
+
+            init(_ parent: FocusableSearchField) { self.parent = parent }
+
+            func controlTextDidChange(_ obj: Foundation.Notification) {
+                guard let field = obj.object as? NSTextField else { return }
+                parent.text = field.stringValue
+            }
+
+            func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+                switch commandSelector {
+                case #selector(NSResponder.insertNewline(_:)):
+                    parent.onSubmit(NSEvent.modifierFlags.contains(.shift))
+                    return true
+                case #selector(NSResponder.cancelOperation(_:)):
+                    parent.onCancel()
+                    return true
+                default:
+                    return false
+                }
+            }
+        }
+    }
+    #endif
+
     /// Search overlay view that displays a search bar with input field and navigation buttons.
     struct SurfaceSearchOverlay: View {
         let surfaceView: SurfaceView
@@ -452,7 +536,9 @@ extension Ghostty {
         @State private var dragOffset: CGSize = .zero
         @State private var barSize: CGSize = .zero
         @State private var showAdvanced: Bool = false
-        @FocusState private var isSearchFieldFocused: Bool
+        /// Bumped to re-request first responder on the search field: once when
+        /// the overlay appears and once per ⌘F re-press.
+        @State private var focusNonce = 0
 
         private let padding: CGFloat = 8
 
@@ -468,12 +554,12 @@ extension Ghostty {
                 .clipShape(clipShape)
                 .shadow(radius: 4)
                 .onAppear {
-                    isSearchFieldFocused = true
+                    focusNonce += 1
                 }
                 .onReceive(NotificationCenter.default.publisher(for: .ghosttySearchFocus)) { notification in
                     guard notification.object as? SurfaceView === surfaceView else { return }
                     DispatchQueue.main.async {
-                        isSearchFieldFocused = true
+                        focusNonce += 1
                     }
                 }
                 .background(
@@ -510,19 +596,31 @@ extension Ghostty {
         @ViewBuilder
         private var searchToolbar: some View {
             HStack(spacing: 4) {
-                BackportSelectionTextField(
-                    "Search",
+                FocusableSearchField(
                     text: $searchState.needle,
-                    selection: $searchState.needleSelection
+                    selection: $searchState.needleSelection,
+                    focusNonce: focusNonce,
+                    onSubmit: { shift in
+                        if shift {
+                            _ = surfaceView.navigateSearchToPrevious()
+                        } else {
+                            _ = surfaceView.navigateSearchToNext()
+                        }
+                    },
+                    onCancel: {
+                        if searchState.needle.isEmpty {
+                            onClose()
+                        } else {
+                            Ghostty.moveFocus(to: surfaceView)
+                        }
+                    }
                 )
-                .textFieldStyle(.plain)
                 .frame(width: 180)
                 .padding(.leading, 8)
                 .padding(.trailing, 50)
                 .padding(.vertical, 6)
                 .background(Color.primary.opacity(0.1))
                 .cornerRadius(6)
-                .focused($isSearchFieldFocused)
                 .overlay(alignment: .trailing) {
                     if let selected = searchState.selected {
                         Text("\(selected + 1)/\(searchState.total.map { "\($0)" } ?? "?")")
@@ -547,25 +645,6 @@ extension Ghostty {
                     )
                 ) { _ in
                     searchState.readPasteboardNeedle()
-                }
-                .onSubmit {
-                    _ = surfaceView.navigateSearchToNext()
-                }
-#if canImport(AppKit)
-                .onExitCommand {
-                    if searchState.needle.isEmpty {
-                        onClose()
-                    } else {
-                        Ghostty.moveFocus(to: surfaceView)
-                    }
-                }
-#endif
-                .backport.onKeyPress(.return) { modifiers in
-                    if modifiers.contains(.shift) {
-                        _ = surfaceView.navigateSearchToPrevious()
-                        return .handled
-                    }
-                    return .ignored
                 }
 
                 Button(action: {

@@ -226,6 +226,19 @@ extension Ghostty {
             return String(cString: ptr)
         }
 
+        /// Read only the LAST `maxLines` rows of the screen+scrollback. Unlike
+        /// `liveScreenText()` (which dumps the whole, up-to-50MB scrollback on
+        /// the calling thread and can freeze it after a large output burst),
+        /// this is bounded — safe to call on the main thread.
+        func liveScreenTail(_ maxLines: UInt32) -> String {
+            guard let surface = self.surface else { return "" }
+            var text = ghostty_text_s()
+            guard ghostty_surface_read_text_tail(surface, maxLines, &text) else { return "" }
+            defer { ghostty_surface_free_text(surface, &text) }
+            guard let ptr = text.text else { return "" }
+            return String(cString: ptr)
+        }
+
         /// Clear the terminal screen and scrollback (the `clear_screen` binding
         /// action). The staged SSH connect uses this to wipe the connection
         /// noise (command echo, host-key + password prompts) right before the
@@ -2358,6 +2371,22 @@ extension Ghostty.SurfaceView {
 
     override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
         let pb = sender.draggingPasteboard
+
+        // Files dropped onto an SSH terminal pane are uploaded to the remote
+        // current directory (or into the attached container) instead of having
+        // their paths pasted. Non-SSH surfaces fall through to text insertion.
+        // Read `.fileURL` straight off the pasteboard items — `readObjects`
+        // can miss Finder drags whose items expose the URL only as a string.
+        let fileURLs: [URL] = (pb.pasteboardItems ?? []).compactMap { item in
+            guard let s = item.string(forType: .fileURL) else { return nil }
+            // Finder sometimes exposes the value as `file:///path` rather than a
+            // bare POSIX path — treat it as a URL, not a path.
+            return s.hasPrefix("file://") ? URL(string: s) : URL(fileURLWithPath: s)
+        }
+        NSLog("%@", "[DropUpload] performDragOperation: items=\(pb.pasteboardItems?.count ?? 0) types=\(pb.types?.map(\.rawValue).joined(separator: ",") ?? "nil") fileURLs=\(fileURLs.map(\.path))")
+        if !fileURLs.isEmpty, DropUpload.handle(urls: fileURLs, surface: self) {
+            return true
+        }
 
         let content = pb.getOpinionatedStringContents()
 

@@ -124,7 +124,14 @@ if [[ "$GHOSTTY_SHELL_FEATURES" == *ssh-* ]]; then
     flags=()
     [[ "$GHOSTTY_SHELL_FEATURES" != *ssh-env* ]] && flags+=(--forward-env=false)
     [[ "$GHOSTTY_SHELL_FEATURES" != *ssh-terminfo* ]] && flags+=(--terminfo=false)
-    "${GHOSTTY_EXE:-$GHOSTTY_BIN_DIR/ghostty}" +ssh "${flags[@]}" -- "$@"
+    builtin local ghostty_exe="${GHOSTTY_EXE:-$GHOSTTY_BIN_DIR/ghostty}"
+    # This fork's macOS bundle binary is `SarvTerminal`, not `ghostty`.
+    # Shells spawned by an older build only have GHOSTTY_BIN_DIR (no
+    # GHOSTTY_EXE), so fall back to the fork's real binary name.
+    if [[ ! -x "$ghostty_exe" && -x "$GHOSTTY_BIN_DIR/SarvTerminal" ]]; then
+      ghostty_exe="$GHOSTTY_BIN_DIR/SarvTerminal"
+    fi
+    "$ghostty_exe" +ssh "${flags[@]}" -- "$@"
   }
 fi
 

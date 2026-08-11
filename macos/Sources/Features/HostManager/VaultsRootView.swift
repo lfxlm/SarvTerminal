@@ -102,17 +102,19 @@ struct VaultsRootView: View {
                     .zIndex(2)
             }
         }
-        // SFTP side panel — full dual-pane file browser for the connected SSH
-        // host. Always mounted once opened so in-progress transfers survive
-        // hide/show (scrim dismiss → reopen). Controlled by offset + opacity
-        // instead of conditional creation.
+        // SFTP side panel — one instance PER opened host, so switching between
+        // servers doesn't destroy the previous one's connection or transfer
+        // records. Every panel stays mounted; only the active one is visible.
+        // Controlled by offset + opacity instead of conditional creation.
         .overlay {
-            if let host = tabs.sftpPanelHost {
-                SftpSidePanelView(host: host, onClose: { tabs.sftpPanelVisible = false })
-                    .offset(x: tabs.sftpPanelVisible ? 0 : 420)
-                    .opacity(tabs.sftpPanelVisible ? 1 : 0)
-                    .allowsHitTesting(tabs.sftpPanelVisible)
-                    .zIndex(2)
+            ForEach(tabs.sftpPanelLocations, id: \.locationID) { location in
+                let active = tabs.sftpPanelLocation?.locationID == location.locationID
+                let shown = active && tabs.sftpPanelVisible
+                SftpSidePanelView(location: location, onClose: { tabs.closeSftpPanel() })
+                    .offset(x: shown ? 0 : 420)
+                    .opacity(shown ? 1 : 0)
+                    .allowsHitTesting(shown)
+                    .zIndex(active ? 2 : 1)
             }
         }
         .animation(.easeInOut(duration: 0.18), value: tabs.sftpPanelVisible)

@@ -1642,6 +1642,37 @@ pub const CAPI = struct {
         return readTextLocked(surface, core_sel, result);
     }
 
+    /// Read up to `max_lines` rows from the END of the screen+scrollback.
+    /// Unlike a full SCREEN selection — which dumps the ENTIRE (up to 50MB)
+    /// scrollback onto the caller's thread and freezes it — this is bounded to
+    /// the last `max_lines` rows. Used by the AI command-assist failure capture
+    /// and any "tail of the buffer" need.
+    export fn ghostty_surface_read_text_tail(
+        surface: *Surface,
+        max_lines: u32,
+        result: *Text,
+    ) bool {
+        surface.core_surface.renderer_state.mutex.lock();
+        defer surface.core_surface.renderer_state.mutex.unlock();
+
+        const pages = &surface.core_surface.renderer_state.terminal.screens.active.pages;
+        const br = pages.getBottomRight(.screen) orelse return false;
+
+        // Start `max_lines` rows above the bottom-right (or at the top when
+        // the buffer is shorter than max_lines), at column 0.
+        var start: terminal.Pin = switch (br.upOverflow(max_lines)) {
+            .offset => |p| p,
+            .overflow => |o| o.end,
+        };
+        start.x = 0;
+
+        const core_sel: terminal.Selection = .{
+            .bounds = .{ .untracked = .{ .start = start, .end = br } },
+            .rectangle = false,
+        };
+        return readTextLocked(surface, core_sel, result);
+    }
+
     fn readTextLocked(
         surface: *Surface,
         core_sel: terminal.Selection,

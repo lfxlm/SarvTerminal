@@ -4,7 +4,7 @@ import SwiftUI
 /// Shows a single-pane remote file browser for the connected SSH host, with
 /// an upload button to transfer local files to the server.
 struct SftpSidePanelView: View {
-    let host: SavedHost
+    let location: FileLocation
     let onClose: () -> Void
 
     @StateObject private var remote = SFTPBrowserModel()
@@ -63,7 +63,7 @@ struct SftpSidePanelView: View {
         HStack(spacing: 8) {
             Image(systemName: "server.rack")
                 .font(.system(size: 11)).foregroundStyle(.secondary)
-            Text(host.displayLabel)
+            Text(location.title)
                 .font(.system(size: 11, weight: .semibold)).lineLimit(1)
             Spacer()
             Button(action: uploadFiles) {
@@ -120,7 +120,7 @@ struct SftpSidePanelView: View {
                 }
             }
         }
-        .onAppear { remote.connect(to: .host(host)) }
+        .onAppear { remote.connect(to: location) }
         // ── Dialogs ───────────────────────────────────────────────
         .onChange(of: showNewFolder) { visible in
             guard visible else { return }
@@ -278,13 +278,13 @@ struct SftpSidePanelView: View {
                 Image(systemName: "arrow.right").font(.system(size: 8)).foregroundStyle(.tertiaryText).frame(width: 10)
                 HStack(spacing: 3) {
                     Image(systemName: "server.rack").font(.system(size: 9))
-                    Text(host.displayLabel).lineLimit(1).truncationMode(.tail)
+                    Text(location.title).lineLimit(1).truncationMode(.tail)
                 }
                 .frame(width: 70, alignment: .leading)
             } else {
                 HStack(spacing: 3) {
                     Image(systemName: "server.rack").font(.system(size: 9))
-                    Text(host.displayLabel).lineLimit(1).truncationMode(.tail)
+                    Text(location.title).lineLimit(1).truncationMode(.tail)
                 }
                 .frame(width: 70, alignment: .leading)
                 Image(systemName: "arrow.right").font(.system(size: 8)).foregroundStyle(.tertiaryText).frame(width: 10)

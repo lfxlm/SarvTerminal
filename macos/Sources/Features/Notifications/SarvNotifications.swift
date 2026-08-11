@@ -22,6 +22,10 @@ enum SarvNotificationRoute: String {
 enum SarvNotificationEvent {
     case sftpFinished(file: String, host: String?)
     case sftpFailed(file: String, host: String?, reason: String)
+    /// Drag-and-drop upload into a terminal pane — carries the remote
+    /// DESTINATION (host:dir, or container:dir) so the result is unambiguous.
+    case dropUploadFinished(file: String, host: String, dest: String)
+    case dropUploadFailed(file: String, host: String, dest: String, reason: String)
     case tunnelDropped(label: String)
     case tunnelFailed(label: String, reason: String)
     case syncFinished(summary: String)
@@ -272,6 +276,20 @@ final class SarvNotifications {
             return Copy(
                 title: "Transfer failed",
                 body: "\(host.map { "\(file) — \($0): " } ?? "\(file): ")\(reason)",
+                route: .transfers,
+                dedupe: file
+            )
+        case let .dropUploadFinished(file, host, dest):
+            return Copy(
+                title: "Upload complete",
+                body: "\(file) → \(host):\(dest)",
+                route: .transfers,
+                dedupe: file
+            )
+        case let .dropUploadFailed(file, host, dest, reason):
+            return Copy(
+                title: "Upload failed",
+                body: "\(file) → \(host):\(dest): \(reason)",
                 route: .transfers,
                 dedupe: file
             )

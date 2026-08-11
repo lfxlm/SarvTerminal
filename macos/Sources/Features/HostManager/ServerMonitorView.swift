@@ -156,16 +156,23 @@ final class ServerMonitorModel: ObservableObject {
         refresh()
     }
 
+    /// Bumped on every refresh; stale results (a previous host's fetch landing
+    /// after the user switched) are discarded.
+    private var refreshGeneration = 0
+
     func refresh() {
         guard let host = resolvedHost else {
             metrics = ServerMetrics()
             lastUpdated = nil
             return
         }
-        guard !loading else { return }
+        refreshGeneration += 1
+        let gen = refreshGeneration
         loading = true
-        Task { @MainActor in
-            self.metrics = await ServerMonitorService.fetch(host: host)
+        Task { @MainActor [weak self] in
+            let fetched = await ServerMonitorService.fetch(host: host)
+            guard let self, gen == self.refreshGeneration else { return }   // stale
+            self.metrics = fetched
             self.loading = false
             self.lastUpdated = Date()
         }

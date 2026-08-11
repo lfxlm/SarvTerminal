@@ -477,6 +477,22 @@ pub fn Stream(comptime H: type) type {
         parser: Parser,
         utf8decoder: UTF8Decoder,
 
+        /// Budget for "invalid/garbage input" warnings. Binary or corrupt
+        /// output can otherwise emit tens of thousands of `log.warn` lines,
+        /// flooding the log sink and slowing the parse thread — which then
+        /// holds the renderer mutex longer and starves the UI.
+        garbage_warnings: u16 = 0,
+        const MAX_GARBAGE_WARNINGS = 20;
+
+        /// Like `log.warn`, but only emits the first `MAX_GARBAGE_WARNINGS`
+        /// warnings per stream; the rest are silently dropped.
+        inline fn logWarnLimited(self: *Self, comptime fmt: []const u8, args: anytype) void {
+            if (self.garbage_warnings < MAX_GARBAGE_WARNINGS) {
+                self.garbage_warnings += 1;
+                log.warn(fmt, args);
+            }
+        }
+
         /// Initialize an allocation-free stream. This will preallocate various
         /// sizes as necessary and anything over that will be dropped. If you
         /// want to support more dynamic behavior use initAlloc instead.
@@ -1039,7 +1055,7 @@ pub fn Stream(comptime H: type) type {
             // We only allow colon or mixed separators for the 'm' command.
             if (c != 'm' and p.params_sep.count() > 0) {
                 @branchHint(.cold);
-                log.warn(
+                self.logWarnLimited(
                     "CSI colon or mixed separators only allowed for 'm' command, got: {f}",
                     .{action},
                 );
@@ -1059,7 +1075,9 @@ pub fn Stream(comptime H: type) type {
             // which is strictly equivalent to `ESC` plus `c - 0x40`.
             if (c > 0x7F) {
                 @branchHint(.unlikely);
-                log.info("executing C1 0x{x} as ESC {c}", .{ c, c - 0x40 });
+                // (No log here: binary/garbage output can contain thousands
+                // of C1 bytes, and per-byte logging floods the log sink and
+                // massively slows the parse thread.)
                 self.escDispatch(.{
                     .intermediates = &.{},
                     .final = c - 0x40,
@@ -1122,13 +1140,13 @@ pub fn Stream(comptime H: type) type {
                                 1 => input.params[0],
                                 else => {
                                     @branchHint(.unlikely);
-                                    log.warn("invalid cursor up command: {f}", .{input});
+                                    self.logWarnLimited("invalid cursor up command: {f}", .{input});
                                     return;
                                 },
                             },
                         }),
 
-                        else => log.warn(
+                        else => self.logWarnLimited(
                             "ignoring unimplemented CSI A with intermediates: {s}",
                             .{input.intermediates},
                         ),
@@ -1143,13 +1161,13 @@ pub fn Stream(comptime H: type) type {
                             1 => input.params[0],
                             else => {
                                 @branchHint(.unlikely);
-                                log.warn("invalid cursor down command: {f}", .{input});
+                                self.logWarnLimited("invalid cursor down command: {f}", .{input});
                                 return;
                             },
                         },
                     }),
 
-                    else => log.warn(
+                    else => self.logWarnLimited(
                         "ignoring unimplemented CSI B with intermediates: {s}",
                         .{input.intermediates},
                     ),
@@ -1165,13 +1183,13 @@ pub fn Stream(comptime H: type) type {
                                 1 => input.params[0],
                                 else => {
                                     @branchHint(.unlikely);
-                                    log.warn("invalid cursor right command: {f}", .{input});
+                                    self.logWarnLimited("invalid cursor right command: {f}", .{input});
                                     return;
                                 },
                             },
                         }),
 
-                        else => log.warn(
+                        else => self.logWarnLimited(
                             "ignoring unimplemented CSI C with intermediates: {s}",
                             .{input.intermediates},
                         ),
@@ -1186,13 +1204,13 @@ pub fn Stream(comptime H: type) type {
                             1 => input.params[0],
                             else => {
                                 @branchHint(.unlikely);
-                                log.warn("invalid cursor left command: {f}", .{input});
+                                self.logWarnLimited("invalid cursor left command: {f}", .{input});
                                 return;
                             },
                         },
                     }),
 
-                    else => log.warn(
+                    else => self.logWarnLimited(
                         "ignoring unimplemented CSI D with intermediates: {s}",
                         .{input.intermediates},
                     ),
@@ -1207,7 +1225,7 @@ pub fn Stream(comptime H: type) type {
                                 1 => input.params[0],
                                 else => {
                                     @branchHint(.unlikely);
-                                    log.warn("invalid cursor up command: {f}", .{input});
+                                    self.logWarnLimited("invalid cursor up command: {f}", .{input});
                                     return;
                                 },
                             },
@@ -1215,7 +1233,7 @@ pub fn Stream(comptime H: type) type {
                         self.handler.vt(.carriage_return, {});
                     },
 
-                    else => log.warn(
+                    else => self.logWarnLimited(
                         "ignoring unimplemented CSI E with intermediates: {s}",
                         .{input.intermediates},
                     ),
@@ -1230,7 +1248,7 @@ pub fn Stream(comptime H: type) type {
                                 1 => input.params[0],
                                 else => {
                                     @branchHint(.unlikely);
-                                    log.warn("invalid cursor down command: {f}", .{input});
+                                    self.logWarnLimited("invalid cursor down command: {f}", .{input});
                                     return;
                                 },
                             },
@@ -1238,7 +1256,7 @@ pub fn Stream(comptime H: type) type {
                         self.handler.vt(.carriage_return, {});
                     },
 
-                    else => log.warn(
+                    else => self.logWarnLimited(
                         "ignoring unimplemented CSI F with intermediates: {s}",
                         .{input.intermediates},
                     ),
@@ -1253,13 +1271,13 @@ pub fn Stream(comptime H: type) type {
                             1 => input.params[0],
                             else => {
                                 @branchHint(.unlikely);
-                                log.warn("invalid HPA command: {f}", .{input});
+                                self.logWarnLimited("invalid HPA command: {f}", .{input});
                                 return;
                             },
                         },
                     }),
 
-                    else => log.warn(
+                    else => self.logWarnLimited(
                         "ignoring unimplemented CSI G with intermediates: {s}",
                         .{input.intermediates},
                     ),
@@ -1277,14 +1295,14 @@ pub fn Stream(comptime H: type) type {
                                 2 => .{ .row = input.params[0], .col = input.params[1] },
                                 else => {
                                     @branchHint(.unlikely);
-                                    log.warn("invalid CUP command: {f}", .{input});
+                                    self.logWarnLimited("invalid CUP command: {f}", .{input});
                                     return;
                                 },
                             };
                             self.handler.vt(.cursor_pos, pos);
                         },
 
-                        else => log.warn(
+                        else => self.logWarnLimited(
                             "ignoring unimplemented CSI H with intermediates: {s}",
                             .{input.intermediates},
                         ),
@@ -1297,12 +1315,12 @@ pub fn Stream(comptime H: type) type {
                         0 => 1,
                         1 => input.params[0],
                         else => {
-                            log.warn("invalid horizontal tab command: {f}", .{input});
+                            self.logWarnLimited("invalid horizontal tab command: {f}", .{input});
                             return;
                         },
                     }),
 
-                    else => log.warn(
+                    else => self.logWarnLimited(
                         "ignoring unimplemented CSI I with intermediates: {s}",
                         .{input.intermediates},
                     ),
@@ -1317,7 +1335,7 @@ pub fn Stream(comptime H: type) type {
                     };
 
                     const protected = protected_ orelse {
-                        log.warn("invalid erase display command: {f}", .{input});
+                        self.logWarnLimited("invalid erase display command: {f}", .{input});
                         return;
                     };
 
@@ -1328,7 +1346,7 @@ pub fn Stream(comptime H: type) type {
                     };
 
                     const mode = mode_ orelse {
-                        log.warn("invalid erase display command: {f}", .{input});
+                        self.logWarnLimited("invalid erase display command: {f}", .{input});
                         return;
                     };
 
@@ -1352,7 +1370,7 @@ pub fn Stream(comptime H: type) type {
 
                     const protected = protected_ orelse {
                         @branchHint(.unlikely);
-                        log.warn("invalid erase line command: {f}", .{input});
+                        self.logWarnLimited("invalid erase line command: {f}", .{input});
                         return;
                     };
 
@@ -1364,7 +1382,7 @@ pub fn Stream(comptime H: type) type {
 
                     const mode = mode_ orelse {
                         @branchHint(.unlikely);
-                        log.warn("invalid erase line command: {f}", .{input});
+                        self.logWarnLimited("invalid erase line command: {f}", .{input});
                         return;
                     };
 
@@ -1375,7 +1393,7 @@ pub fn Stream(comptime H: type) type {
                         .right_unless_pending_wrap => self.handler.vt(.erase_line_right_unless_pending_wrap, protected),
                         _ => {
                             @branchHint(.unlikely);
-                            log.warn("invalid erase line mode: {}", .{mode});
+                            self.logWarnLimited("invalid erase line mode: {}", .{mode});
                         },
                     }
                 },
@@ -1387,12 +1405,12 @@ pub fn Stream(comptime H: type) type {
                         0 => 1,
                         1 => input.params[0],
                         else => {
-                            log.warn("invalid IL command: {f}", .{input});
+                            self.logWarnLimited("invalid IL command: {f}", .{input});
                             return;
                         },
                     }),
 
-                    else => log.warn(
+                    else => self.logWarnLimited(
                         "ignoring unimplemented CSI L with intermediates: {s}",
                         .{input.intermediates},
                     ),
@@ -1405,12 +1423,12 @@ pub fn Stream(comptime H: type) type {
                         0 => 1,
                         1 => input.params[0],
                         else => {
-                            log.warn("invalid DL command: {f}", .{input});
+                            self.logWarnLimited("invalid DL command: {f}", .{input});
                             return;
                         },
                     }),
 
-                    else => log.warn(
+                    else => self.logWarnLimited(
                         "ignoring unimplemented CSI M with intermediates: {s}",
                         .{input.intermediates},
                     ),
@@ -1422,12 +1440,12 @@ pub fn Stream(comptime H: type) type {
                         0 => 1,
                         1 => input.params[0],
                         else => {
-                            log.warn("invalid delete characters command: {f}", .{input});
+                            self.logWarnLimited("invalid delete characters command: {f}", .{input});
                             return;
                         },
                     }),
 
-                    else => log.warn(
+                    else => self.logWarnLimited(
                         "ignoring unimplemented CSI P with intermediates: {s}",
                         .{input.intermediates},
                     ),
@@ -1440,12 +1458,12 @@ pub fn Stream(comptime H: type) type {
                         0 => 1,
                         1 => input.params[0],
                         else => {
-                            log.warn("invalid scroll up command: {f}", .{input});
+                            self.logWarnLimited("invalid scroll up command: {f}", .{input});
                             return;
                         },
                     }),
 
-                    else => log.warn(
+                    else => self.logWarnLimited(
                         "ignoring unimplemented CSI S with intermediates: {s}",
                         .{input.intermediates},
                     ),
@@ -1457,12 +1475,12 @@ pub fn Stream(comptime H: type) type {
                         0 => 1,
                         1 => input.params[0],
                         else => {
-                            log.warn("invalid scroll down command: {f}", .{input});
+                            self.logWarnLimited("invalid scroll down command: {f}", .{input});
                             return;
                         },
                     }),
 
-                    else => log.warn(
+                    else => self.logWarnLimited(
                         "ignoring unimplemented CSI T with intermediates: {s}",
                         .{input.intermediates},
                     ),
@@ -1494,7 +1512,7 @@ pub fn Stream(comptime H: type) type {
                             else => {},
                         }
 
-                        log.warn("invalid cursor tabulation control: {f}", .{input});
+                        self.logWarnLimited("invalid cursor tabulation control: {f}", .{input});
                         return;
                     },
 
@@ -1503,9 +1521,9 @@ pub fn Stream(comptime H: type) type {
                         input.params[0] == 5)
                     {
                         self.handler.vt(.tab_reset, {});
-                    } else log.warn("invalid cursor tabulation control: {f}", .{input}),
+                    } else self.logWarnLimited("invalid cursor tabulation control: {f}", .{input}),
 
-                    else => log.warn(
+                    else => self.logWarnLimited(
                         "ignoring unimplemented CSI W with intermediates: {s}",
                         .{input.intermediates},
                     ),
@@ -1520,12 +1538,12 @@ pub fn Stream(comptime H: type) type {
                             1 => input.params[0],
                             else => {
                                 @branchHint(.unlikely);
-                                log.warn("invalid erase characters command: {f}", .{input});
+                                self.logWarnLimited("invalid erase characters command: {f}", .{input});
                                 return;
                             },
                         }),
 
-                        else => log.warn(
+                        else => self.logWarnLimited(
                             "ignoring unimplemented CSI X with intermediates: {s}",
                             .{input.intermediates},
                         ),
@@ -1538,12 +1556,12 @@ pub fn Stream(comptime H: type) type {
                         0 => 1,
                         1 => input.params[0],
                         else => {
-                            log.warn("invalid horizontal tab back command: {f}", .{input});
+                            self.logWarnLimited("invalid horizontal tab back command: {f}", .{input});
                             return;
                         },
                     }),
 
-                    else => log.warn(
+                    else => self.logWarnLimited(
                         "ignoring unimplemented CSI Z with intermediates: {s}",
                         .{input.intermediates},
                     ),
@@ -1556,13 +1574,13 @@ pub fn Stream(comptime H: type) type {
                             0 => 1,
                             1 => input.params[0],
                             else => {
-                                log.warn("invalid HPR command: {f}", .{input});
+                                self.logWarnLimited("invalid HPR command: {f}", .{input});
                                 return;
                             },
                         },
                     }),
 
-                    else => log.warn(
+                    else => self.logWarnLimited(
                         "ignoring unimplemented CSI a with intermediates: {s}",
                         .{input.intermediates},
                     ),
@@ -1574,12 +1592,12 @@ pub fn Stream(comptime H: type) type {
                         0 => 1,
                         1 => input.params[0],
                         else => {
-                            log.warn("invalid print repeat command: {f}", .{input});
+                            self.logWarnLimited("invalid print repeat command: {f}", .{input});
                             return;
                         },
                     }),
 
-                    else => log.warn(
+                    else => self.logWarnLimited(
                         "ignoring unimplemented CSI b with intermediates: {s}",
                         .{input.intermediates},
                     ),
@@ -1616,13 +1634,13 @@ pub fn Stream(comptime H: type) type {
                             0 => 1,
                             1 => input.params[0],
                             else => {
-                                log.warn("invalid VPA command: {f}", .{input});
+                                self.logWarnLimited("invalid VPA command: {f}", .{input});
                                 return;
                             },
                         },
                     }),
 
-                    else => log.warn(
+                    else => self.logWarnLimited(
                         "ignoring unimplemented CSI d with intermediates: {s}",
                         .{input.intermediates},
                     ),
@@ -1635,13 +1653,13 @@ pub fn Stream(comptime H: type) type {
                             0 => 1,
                             1 => input.params[0],
                             else => {
-                                log.warn("invalid VPR command: {f}", .{input});
+                                self.logWarnLimited("invalid VPR command: {f}", .{input});
                                 return;
                             },
                         },
                     }),
 
-                    else => log.warn(
+                    else => self.logWarnLimited(
                         "ignoring unimplemented CSI e with intermediates: {s}",
                         .{input.intermediates},
                     ),
@@ -1653,22 +1671,22 @@ pub fn Stream(comptime H: type) type {
                     0 => {
                         const mode: csi.TabClear = switch (input.params.len) {
                             1 => std.meta.intToEnum(csi.TabClear, input.params[0]) catch {
-                                log.warn("invalid tab clear mode: {}", .{input.params[0]});
+                                self.logWarnLimited("invalid tab clear mode: {}", .{input.params[0]});
                                 return;
                             },
                             else => {
-                                log.warn("invalid tab clear command: {f}", .{input});
+                                self.logWarnLimited("invalid tab clear command: {f}", .{input});
                                 return;
                             },
                         };
                         switch (mode) {
                             .current => self.handler.vt(.tab_clear_current, {}),
                             .all => self.handler.vt(.tab_clear_all, {}),
-                            _ => log.warn("unknown tab clear mode: {}", .{mode}),
+                            _ => self.logWarnLimited("unknown tab clear mode: {}", .{mode}),
                         }
                     },
 
-                    else => log.warn(
+                    else => self.logWarnLimited(
                         "ignoring unimplemented CSI g with intermediates: {s}",
                         .{input.intermediates},
                     ),
@@ -1682,7 +1700,7 @@ pub fn Stream(comptime H: type) type {
                         if (input.intermediates.len == 1 and
                             input.intermediates[0] == '?') break :ansi false;
 
-                        log.warn("invalid set mode command: {f}", .{input});
+                        self.logWarnLimited("invalid set mode command: {f}", .{input});
                         break :mode;
                     };
 
@@ -1703,7 +1721,7 @@ pub fn Stream(comptime H: type) type {
                         if (input.intermediates.len == 1 and
                             input.intermediates[0] == '?') break :ansi false;
 
-                        log.warn("invalid set mode command: {f}", .{input});
+                        self.logWarnLimited("invalid set mode command: {f}", .{input});
                         break :mode;
                     };
 
@@ -1749,14 +1767,14 @@ pub fn Stream(comptime H: type) type {
                                     4 => .other_keys_none,
                                     else => {
                                         @branchHint(.unlikely);
-                                        log.warn("invalid setModifyKeyFormat: {f}", .{input});
+                                        self.logWarnLimited("invalid setModifyKeyFormat: {f}", .{input});
                                         break :blk;
                                     },
                                 };
 
                                 if (input.params.len > 2) {
                                     @branchHint(.unlikely);
-                                    log.warn("invalid setModifyKeyFormat: {f}", .{input});
+                                    self.logWarnLimited("invalid setModifyKeyFormat: {f}", .{input});
                                     break :blk;
                                 }
 
@@ -1792,7 +1810,7 @@ pub fn Stream(comptime H: type) type {
                             // there are others forms of CSI m that have intermediates.
                             // `vim --clean` uses `CSI ? 4 m` and I don't know what
                             // that means.
-                            log.warn(
+                            self.logWarnLimited(
                                 "ignoring unimplemented CSI m with intermediates: {s}",
                                 .{input.intermediates},
                             );
@@ -1807,7 +1825,7 @@ pub fn Stream(comptime H: type) type {
                         input.intermediates[0] == '?')
                     {
                         if (input.params.len != 1) {
-                            log.warn("invalid device status report command: {f}", .{input});
+                            self.logWarnLimited("invalid device status report command: {f}", .{input});
                             return;
                         }
 
@@ -1816,12 +1834,12 @@ pub fn Stream(comptime H: type) type {
                             if (input.intermediates.len == 1 and
                                 input.intermediates[0] == '?') break :question true;
 
-                            log.warn("invalid set mode command: {f}", .{input});
+                            self.logWarnLimited("invalid set mode command: {f}", .{input});
                             return;
                         };
 
                         const req = device_status.reqFromInt(input.params[0], question) orelse {
-                            log.warn("invalid device status report command: {f}", .{input});
+                            self.logWarnLimited("invalid device status report command: {f}", .{input});
                             return;
                         };
 
@@ -1842,13 +1860,13 @@ pub fn Stream(comptime H: type) type {
                                 self.handler.vt(.modify_key_format, .other_keys_numeric_except);
                             },
 
-                            else => log.warn(
+                            else => self.logWarnLimited(
                                 "unknown CSI n with intermediate: {}",
                                 .{input.intermediates[0]},
                             ),
                         },
 
-                        else => log.warn(
+                        else => self.logWarnLimited(
                             "ignoring unimplemented CSI n with intermediates: {s}",
                             .{input.intermediates},
                         ),
@@ -1866,7 +1884,7 @@ pub fn Stream(comptime H: type) type {
                                 else => {},
                             }
 
-                            log.warn(
+                            self.logWarnLimited(
                                 "ignoring unimplemented CSI p with intermediates: {s}",
                                 .{input.intermediates},
                             );
@@ -1874,7 +1892,7 @@ pub fn Stream(comptime H: type) type {
                         };
 
                         if (input.params.len != 1) {
-                            log.warn("invalid DECRQM command: {f}", .{input});
+                            self.logWarnLimited("invalid DECRQM command: {f}", .{input});
                             break :decrqm;
                         }
 
@@ -1890,7 +1908,7 @@ pub fn Stream(comptime H: type) type {
                         }
                     },
 
-                    else => log.warn(
+                    else => self.logWarnLimited(
                         "ignoring unimplemented CSI p with intermediates: {s}",
                         .{input.intermediates},
                     ),
@@ -1912,12 +1930,12 @@ pub fn Stream(comptime H: type) type {
                                     5 => .blinking_bar,
                                     6 => .steady_bar,
                                     else => {
-                                        log.warn("invalid cursor style value: {}", .{input.params[0]});
+                                        self.logWarnLimited("invalid cursor style value: {}", .{input.params[0]});
                                         return;
                                     },
                                 },
                                 else => {
-                                    log.warn("invalid set cursor style command: {f}", .{input});
+                                    self.logWarnLimited("invalid set cursor style command: {f}", .{input});
                                     return;
                                 },
                             };
@@ -1937,7 +1955,7 @@ pub fn Stream(comptime H: type) type {
                             };
 
                             const mode = mode_ orelse {
-                                log.warn("invalid set protected mode command: {f}", .{input});
+                                self.logWarnLimited("invalid set protected mode command: {f}", .{input});
                                 return;
                             };
 
@@ -1951,14 +1969,14 @@ pub fn Stream(comptime H: type) type {
                         // XTVERSION
                         '>' => self.handler.vt(.xtversion, {}),
                         else => {
-                            log.warn(
+                            self.logWarnLimited(
                                 "ignoring unimplemented CSI q with intermediates: {s}",
                                 .{input.intermediates},
                             );
                         },
                     },
 
-                    else => log.warn(
+                    else => self.logWarnLimited(
                         "ignoring unimplemented CSI p with intermediates: {s}",
                         .{input.intermediates},
                     ),
@@ -1974,7 +1992,7 @@ pub fn Stream(comptime H: type) type {
                             2 => self.handler.vt(.top_and_bottom_margin, .{ .top_left = input.params[0], .bottom_right = input.params[1] }),
                             else => {
                                 @branchHint(.unlikely);
-                                log.warn("invalid DECSTBM command: {f}", .{input});
+                                self.logWarnLimited("invalid DECSTBM command: {f}", .{input});
                             },
                         },
 
@@ -1985,7 +2003,7 @@ pub fn Stream(comptime H: type) type {
                                     if (modes.modeFromInt(mode_int, false)) |mode| {
                                         self.handler.vt(.restore_mode, .{ .mode = mode });
                                     } else {
-                                        log.warn(
+                                        self.logWarnLimited(
                                             "unimplemented restore mode: {}",
                                             .{mode_int},
                                         );
@@ -1993,13 +2011,13 @@ pub fn Stream(comptime H: type) type {
                                 }
                             },
 
-                            else => log.warn(
+                            else => self.logWarnLimited(
                                 "unknown CSI s with intermediate: {f}",
                                 .{input},
                             ),
                         },
 
-                        else => log.warn(
+                        else => self.logWarnLimited(
                             "ignoring unimplemented CSI s with intermediates: {f}",
                             .{input},
                         ),
@@ -2016,7 +2034,7 @@ pub fn Stream(comptime H: type) type {
                         0 => self.handler.vt(.left_and_right_margin_ambiguous, {}),
                         1 => self.handler.vt(.left_and_right_margin, .{ .top_left = input.params[0], .bottom_right = 0 }),
                         2 => self.handler.vt(.left_and_right_margin, .{ .top_left = input.params[0], .bottom_right = input.params[1] }),
-                        else => log.warn("invalid DECSLRM command: {f}", .{input}),
+                        else => self.logWarnLimited("invalid DECSLRM command: {f}", .{input}),
                     },
 
                     1 => switch (input.intermediates[0]) {
@@ -2025,7 +2043,7 @@ pub fn Stream(comptime H: type) type {
                                 if (modes.modeFromInt(mode_int, false)) |mode| {
                                     self.handler.vt(.save_mode, .{ .mode = mode });
                                 } else {
-                                    log.warn(
+                                    self.logWarnLimited(
                                         "unimplemented save mode: {}",
                                         .{mode_int},
                                     );
@@ -2041,12 +2059,12 @@ pub fn Stream(comptime H: type) type {
                                     0 => false,
                                     1 => true,
                                     else => {
-                                        log.warn("invalid XTSHIFTESCAPE command: {f}", .{input});
+                                        self.logWarnLimited("invalid XTSHIFTESCAPE command: {f}", .{input});
                                         break :capture;
                                     },
                                 },
                                 else => {
-                                    log.warn("invalid XTSHIFTESCAPE command: {f}", .{input});
+                                    self.logWarnLimited("invalid XTSHIFTESCAPE command: {f}", .{input});
                                     break :capture;
                                 },
                             };
@@ -2054,13 +2072,13 @@ pub fn Stream(comptime H: type) type {
                             self.handler.vt(.mouse_shift_capture, capture);
                         },
 
-                        else => log.warn(
+                        else => self.logWarnLimited(
                             "unknown CSI s with intermediate: {f}",
                             .{input},
                         ),
                     },
 
-                    else => log.warn(
+                    else => self.logWarnLimited(
                         "ignoring unimplemented CSI s with intermediates: {f}",
                         .{input},
                     ),
@@ -2074,28 +2092,28 @@ pub fn Stream(comptime H: type) type {
                                 14 => if (input.params.len == 1) {
                                     // report the text area size in pixels
                                     self.handler.vt(.size_report, .csi_14_t);
-                                } else log.warn(
+                                } else self.logWarnLimited(
                                     "ignoring CSI 14 t with extra parameters: {f}",
                                     .{input},
                                 ),
                                 16 => if (input.params.len == 1) {
                                     // report cell size in pixels
                                     self.handler.vt(.size_report, .csi_16_t);
-                                } else log.warn(
+                                } else self.logWarnLimited(
                                     "ignoring CSI 16 t with extra parameters: {f}",
                                     .{input},
                                 ),
                                 18 => if (input.params.len == 1) {
                                     // report screen size in characters
                                     self.handler.vt(.size_report, .csi_18_t);
-                                } else log.warn(
+                                } else self.logWarnLimited(
                                     "ignoring CSI 18 t with extra parameters: {f}",
                                     .{input},
                                 ),
                                 21 => if (input.params.len == 1) {
                                     // report window title
                                     self.handler.vt(.size_report, .csi_21_t);
-                                } else log.warn(
+                                } else self.logWarnLimited(
                                     "ignoring CSI 21 t with extra parameters: {f}",
                                     .{input},
                                 ),
@@ -2131,7 +2149,7 @@ pub fn Stream(comptime H: type) type {
                             .{input},
                         );
                     },
-                    else => log.warn(
+                    else => self.logWarnLimited(
                         "ignoring unimplemented CSI t with intermediates: {f}",
                         .{input},
                     ),
@@ -2147,7 +2165,7 @@ pub fn Stream(comptime H: type) type {
                         '>' => push: {
                             const flags: u5 = if (input.params.len == 1)
                                 std.math.cast(u5, input.params[0]) orelse {
-                                    log.warn("invalid pushKittyKeyboard command: {f}", .{input});
+                                    self.logWarnLimited("invalid pushKittyKeyboard command: {f}", .{input});
                                     break :push;
                                 }
                             else
@@ -2168,7 +2186,7 @@ pub fn Stream(comptime H: type) type {
                         '=' => set: {
                             const flags: u5 = if (input.params.len >= 1)
                                 std.math.cast(u5, input.params[0]) orelse {
-                                    log.warn("invalid setKittyKeyboard command: {f}", .{input});
+                                    self.logWarnLimited("invalid setKittyKeyboard command: {f}", .{input});
                                     break :set;
                                 }
                             else
@@ -2184,7 +2202,7 @@ pub fn Stream(comptime H: type) type {
                                 2 => .kitty_keyboard_set_or,
                                 3 => .kitty_keyboard_set_not,
                                 else => {
-                                    log.warn("invalid setKittyKeyboard command: {f}", .{input});
+                                    self.logWarnLimited("invalid setKittyKeyboard command: {f}", .{input});
                                     break :set;
                                 },
                             };
@@ -2198,13 +2216,13 @@ pub fn Stream(comptime H: type) type {
                             }
                         },
 
-                        else => log.warn(
+                        else => self.logWarnLimited(
                             "unknown CSI s with intermediate: {f}",
                             .{input},
                         ),
                     },
 
-                    else => log.warn(
+                    else => self.logWarnLimited(
                         "ignoring unimplemented CSI u: {f}",
                         .{input},
                     ),
@@ -2217,12 +2235,12 @@ pub fn Stream(comptime H: type) type {
                         1 => @max(1, input.params[0]),
                         else => {
                             @branchHint(.unlikely);
-                            log.warn("invalid ICH command: {f}", .{input});
+                            self.logWarnLimited("invalid ICH command: {f}", .{input});
                             return;
                         },
                     }),
 
-                    else => log.warn(
+                    else => self.logWarnLimited(
                         "ignoring unimplemented CSI @: {f}",
                         .{input},
                     ),
@@ -2232,11 +2250,11 @@ pub fn Stream(comptime H: type) type {
                 '}' => decsasd: {
                     // Verify we're getting a DECSASD command
                     if (input.intermediates.len != 1 or input.intermediates[0] != '$') {
-                        log.warn("unimplemented CSI callback: {f}", .{input});
+                        self.logWarnLimited("unimplemented CSI callback: {f}", .{input});
                         break :decsasd;
                     }
                     if (input.params.len != 1) {
-                        log.warn("unimplemented CSI callback: {f}", .{input});
+                        self.logWarnLimited("unimplemented CSI callback: {f}", .{input});
                         break :decsasd;
                     }
 
@@ -2244,7 +2262,7 @@ pub fn Stream(comptime H: type) type {
                         0 => .main,
                         1 => .status_line,
                         else => {
-                            log.warn("unimplemented CSI callback: {f}", .{input});
+                            self.logWarnLimited("unimplemented CSI callback: {f}", .{input});
                             break :decsasd;
                         },
                     };
@@ -2252,7 +2270,7 @@ pub fn Stream(comptime H: type) type {
                     self.handler.vt(.active_status_display, display);
                 },
 
-                else => log.warn("unimplemented CSI action: {f}", .{input}),
+                else => self.logWarnLimited("unimplemented CSI action: {f}", .{input}),
             }
         }
 
@@ -2289,7 +2307,7 @@ pub fn Stream(comptime H: type) type {
                     @branchHint(.likely);
                     if (!std.unicode.utf8ValidateSlice(title)) {
                         @branchHint(.unlikely);
-                        log.warn("change title request: invalid utf-8, ignoring request", .{});
+                        self.logWarnLimited("change title request: invalid utf-8, ignoring request", .{});
                         return;
                     }
 
@@ -2320,7 +2338,7 @@ pub fn Stream(comptime H: type) type {
                 .mouse_shape => |v| {
                     const shape = MouseShape.fromString(v.value) orelse {
                         @branchHint(.unlikely);
-                        log.warn("unknown cursor shape: {s}", .{v.value});
+                        self.logWarnLimited("unknown cursor shape: {s}", .{v.value});
                         return;
                     };
 
@@ -2385,7 +2403,7 @@ pub fn Stream(comptime H: type) type {
                     @branchHint(.cold);
                     // This is an invalid internal state, not an invalid OSC
                     // string being parsed. We shouldn't see this.
-                    log.warn("invalid OSC, should never happen", .{});
+                    self.logWarnLimited("invalid OSC, should never happen", .{});
                 },
             }
         }
@@ -2396,7 +2414,7 @@ pub fn Stream(comptime H: type) type {
             set: charsets.Charset,
         ) void {
             if (intermediates.len != 1) {
-                log.warn("invalid charset intermediate: {any}", .{intermediates});
+                self.logWarnLimited("invalid charset intermediate: {any}", .{intermediates});
                 return;
             }
 
@@ -2409,7 +2427,7 @@ pub fn Stream(comptime H: type) type {
                 '+' => .G3,
                 else => {
                     @branchHint(.unlikely);
-                    log.warn("invalid charset intermediate: {any}", .{intermediates});
+                    self.logWarnLimited("invalid charset intermediate: {any}", .{intermediates});
                     return;
                 },
             };
@@ -2466,7 +2484,7 @@ pub fn Stream(comptime H: type) type {
                         0 => self.handler.vt(.save_cursor, {}),
                         else => {
                             @branchHint(.unlikely);
-                            log.warn("invalid command: {f}", .{action});
+                            self.logWarnLimited("invalid command: {f}", .{action});
                             return;
                         },
                     }
@@ -2506,7 +2524,7 @@ pub fn Stream(comptime H: type) type {
                     0 => self.handler.vt(.index, {}),
                     else => {
                         @branchHint(.unlikely);
-                        log.warn("invalid index command: {f}", .{action});
+                        self.logWarnLimited("invalid index command: {f}", .{action});
                         return;
                     },
                 },
@@ -2516,7 +2534,7 @@ pub fn Stream(comptime H: type) type {
                     0 => self.handler.vt(.next_line, {}),
                     else => {
                         @branchHint(.unlikely);
-                        log.warn("invalid next line command: {f}", .{action});
+                        self.logWarnLimited("invalid next line command: {f}", .{action});
                         return;
                     },
                 },
@@ -2526,7 +2544,7 @@ pub fn Stream(comptime H: type) type {
                     0 => self.handler.vt(.tab_set, {}),
                     else => {
                         @branchHint(.unlikely);
-                        log.warn("invalid tab set command: {f}", .{action});
+                        self.logWarnLimited("invalid tab set command: {f}", .{action});
                         return;
                     },
                 },
@@ -2538,7 +2556,7 @@ pub fn Stream(comptime H: type) type {
                         0 => self.handler.vt(.reverse_index, {}),
                         else => {
                             @branchHint(.unlikely);
-                            log.warn("invalid reverse index command: {f}", .{action});
+                            self.logWarnLimited("invalid reverse index command: {f}", .{action});
                             return;
                         },
                     }
@@ -2553,7 +2571,7 @@ pub fn Stream(comptime H: type) type {
                     }),
                     else => {
                         @branchHint(.unlikely);
-                        log.warn("invalid single shift 2 command: {f}", .{action});
+                        self.logWarnLimited("invalid single shift 2 command: {f}", .{action});
                         return;
                     },
                 },
@@ -2567,7 +2585,7 @@ pub fn Stream(comptime H: type) type {
                     }),
                     else => {
                         @branchHint(.unlikely);
-                        log.warn("invalid single shift 3 command: {f}", .{action});
+                        self.logWarnLimited("invalid single shift 3 command: {f}", .{action});
                         return;
                     },
                 },
@@ -2575,25 +2593,25 @@ pub fn Stream(comptime H: type) type {
                 // SPA - Start of Guarded Area
                 'V' => switch (action.intermediates.len) {
                     0 => self.handler.vt(.protected_mode_iso, {}),
-                    else => log.warn("unimplemented ESC callback: {f}", .{action}),
+                    else => self.logWarnLimited("unimplemented ESC callback: {f}", .{action}),
                 },
 
                 // EPA - End of Guarded Area
                 'W' => switch (action.intermediates.len) {
                     0 => self.handler.vt(.protected_mode_off, {}),
-                    else => log.warn("unimplemented ESC callback: {f}", .{action}),
+                    else => self.logWarnLimited("unimplemented ESC callback: {f}", .{action}),
                 },
 
                 // DECID
                 'Z' => if (action.intermediates.len == 0) {
                     self.handler.vt(.device_attributes, .primary);
-                } else log.warn("unimplemented ESC callback: {f}", .{action}),
+                } else self.logWarnLimited("unimplemented ESC callback: {f}", .{action}),
 
                 // RIS - Full Reset
                 'c' => switch (action.intermediates.len) {
                     0 => self.handler.vt(.full_reset, {}),
                     else => {
-                        log.warn("invalid full reset command: {f}", .{action});
+                        self.logWarnLimited("invalid full reset command: {f}", .{action});
                         return;
                     },
                 },
@@ -2607,7 +2625,7 @@ pub fn Stream(comptime H: type) type {
                     }),
                     else => {
                         @branchHint(.unlikely);
-                        log.warn("invalid single shift 2 command: {f}", .{action});
+                        self.logWarnLimited("invalid single shift 2 command: {f}", .{action});
                         return;
                     },
                 },
@@ -2621,7 +2639,7 @@ pub fn Stream(comptime H: type) type {
                     }),
                     else => {
                         @branchHint(.unlikely);
-                        log.warn("invalid single shift 3 command: {f}", .{action});
+                        self.logWarnLimited("invalid single shift 3 command: {f}", .{action});
                         return;
                     },
                 },
@@ -2635,7 +2653,7 @@ pub fn Stream(comptime H: type) type {
                     }),
                     else => {
                         @branchHint(.unlikely);
-                        log.warn("invalid locking shift 1 right command: {f}", .{action});
+                        self.logWarnLimited("invalid locking shift 1 right command: {f}", .{action});
                         return;
                     },
                 },
@@ -2649,7 +2667,7 @@ pub fn Stream(comptime H: type) type {
                     }),
                     else => {
                         @branchHint(.unlikely);
-                        log.warn("invalid locking shift 2 right command: {f}", .{action});
+                        self.logWarnLimited("invalid locking shift 2 right command: {f}", .{action});
                         return;
                     },
                 },
@@ -2663,7 +2681,7 @@ pub fn Stream(comptime H: type) type {
                     }),
                     else => {
                         @branchHint(.unlikely);
-                        log.warn("invalid locking shift 3 right command: {f}", .{action});
+                        self.logWarnLimited("invalid locking shift 3 right command: {f}", .{action});
                         return;
                     },
                 },
@@ -2673,7 +2691,7 @@ pub fn Stream(comptime H: type) type {
                     @branchHint(.likely);
                     switch (action.intermediates.len) {
                         0 => self.handler.vt(.set_mode, .{ .mode = .keypad_keys }),
-                        else => log.warn("unimplemented setMode: {f}", .{action}),
+                        else => self.logWarnLimited("unimplemented setMode: {f}", .{action}),
                     }
                 },
 
@@ -2682,7 +2700,7 @@ pub fn Stream(comptime H: type) type {
                     @branchHint(.likely);
                     switch (action.intermediates.len) {
                         0 => self.handler.vt(.reset_mode, .{ .mode = .keypad_keys }),
-                        else => log.warn("unimplemented setMode: {f}", .{action}),
+                        else => self.logWarnLimited("unimplemented setMode: {f}", .{action}),
                     }
                 },
 

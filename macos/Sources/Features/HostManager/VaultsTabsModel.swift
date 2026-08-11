@@ -199,6 +199,10 @@ final class VaultsTabsModel: ObservableObject {
     /// Staged SSH connections, keyed by the current surface id of each. A pane
     /// shows the connection popup when its surface id has an entry here.
     @Published private(set) var connections: [UUID: ActiveConnection] = [:]
+    /// Docker attaches typed into an EXISTING terminal ("run in current tab"),
+    /// keyed by surface id. The tab's host carries no startup command for those,
+    /// so drag-and-drop uploads consult this to route into the container.
+    @Published private(set) var containerAttaches: [UUID: DropUpload.Container] = [:]
     @Published var selection: Selection = .dashboard {
         didSet {
             if case let .terminal(id) = selection {
@@ -241,12 +245,35 @@ final class VaultsTabsModel: ObservableObject {
     /// screen (driven by the SSH popup's "Edit host" — keeps the popup visible).
     @Published var editingHost: SavedHost?
 
-    /// When true, the SFTP side panel is visible. The panel view stays mounted
-    /// so in-progress transfers survive hide/show cycles.
+    /// One SFTP side panel per opened location (host OR container), so each
+    /// keeps its own connection, current folder, and transfer records. A single
+    /// shared panel would lose the previous location's uploads whenever the
+    /// drawer moves to another server.
     @Published var sftpPanelVisible: Bool = false
-    /// The host connected by the SFTP side panel. Set once and never cleared,
-    /// so the panel view stays alive across hide/show cycles.
-    @Published var sftpPanelHost: SavedHost?
+    @Published private(set) var sftpPanelLocations: [FileLocation] = []
+    /// Which location's panel is currently shown (nil until the first open).
+    @Published var sftpPanelActiveLocationID: String?
+
+    /// The currently shown SFTP panel's location, if any.
+    var sftpPanelLocation: FileLocation? {
+        guard let id = sftpPanelActiveLocationID else { return nil }
+        return sftpPanelLocations.first { $0.locationID == id }
+    }
+
+    /// Open (or re-focus) the SFTP panel for `location`. Reuses the existing
+    /// panel for that location so its connection + in-progress transfers survive.
+    func openSftpPanel(for location: FileLocation) {
+        if !sftpPanelLocations.contains(where: { $0.locationID == location.locationID }) {
+            sftpPanelLocations.append(location)
+        }
+        sftpPanelActiveLocationID = location.locationID
+        sftpPanelVisible = true
+    }
+
+    /// Hide the SFTP panels. They stay mounted so their state survives.
+    func closeSftpPanel() {
+        sftpPanelVisible = false
+    }
 
     /// Drives the ad-hoc Serial Console connect sheet (device + baud picker).
     /// Set from the Hosts "Serial" button and the command palette; presented by
@@ -519,6 +546,12 @@ final class VaultsTabsModel: ObservableObject {
             model.sendText(text)
             model.sendKeyEvent(Ghostty.Input.KeyEvent(key: .enter, action: .press))
             sent = true
+            // A docker attach typed into an existing terminal leaves no trace on
+            // the tab's host — record the container per surface so drag-and-drop
+            // uploads can route into the container instead of the host.
+            if let info = DropUpload.containerInfo(fromCommand: text) {
+                containerAttaches[pane.id] = info
+            }
         }
         if sent { selection = .terminal(tab.id) }
         return sent
@@ -551,7 +584,9 @@ final class VaultsTabsModel: ObservableObject {
         return tab.id == draggingTabID
     }
 
-    private func tab(containing surface: Ghostty.SurfaceView) -> TerminalTab? {
+    /// The tab whose split tree owns `surface`, if any — used by the split
+    /// drop zones and by drag-and-drop file uploads to find the SSH host.
+    func tab(containing surface: Ghostty.SurfaceView) -> TerminalTab? {
         terminals.first { $0.surfaceTree.contains(surface) }
     }
 
@@ -647,6 +682,7 @@ final class VaultsTabsModel: ObservableObject {
     /// its poll timer and password temp file.
     private func teardownConnection(surfaceID: UUID) {
         crashTrace("teardownConnection \(surfaceID)")
+        stopSudoResponder(for: surfaceID)
         guard let conn = connections[surfaceID] else { crashTrace("teardownConnection: no connection"); return }
         conn.controller.stop()
         deleteTempFile(conn.model.passwordFilePath)
@@ -784,14 +820,15 @@ final class VaultsTabsModel: ObservableObject {
     /// "Copy the current session" for a remote command (docker exec, …): open a
     /// NEW TAB SSH session to `host` — auto-connecting with the saved password
     /// via the guided flow — and run `startupCommand` in the remote shell once
-    /// connected. Returns false if no host/app is available.
+    /// connected. `sudoPassword` (when set) is auto-typed into any sudo prompt
+    /// the startup command triggers. Returns false if no host/app is available.
     @discardableResult
     @MainActor
-    func openSSHTab(host: SavedHost, name: String, startupCommand: String?) -> Bool {
+    func openSSHTab(host: SavedHost, name: String, startupCommand: String?, sudoPassword: String? = nil) -> Bool {
         guard let app = (NSApp.delegate as? AppDelegate)?.ghostty.app else { return false }
         let effective = hostWithStartupCommand(host, startupCommand)
         _ = startSSHConnection(app: app, command: host.sshCommand(staged: true),
-                               name: name, host: effective)
+                               name: name, host: effective, sudoPassword: sudoPassword)
         return true
     }
 
@@ -799,7 +836,7 @@ final class VaultsTabsModel: ObservableObject {
     /// terminal instead of a new tab.
     @discardableResult
     @MainActor
-    func openSSHSplit(host: SavedHost, name: String, startupCommand: String?) -> Bool {
+    func openSSHSplit(host: SavedHost, name: String, startupCommand: String?, sudoPassword: String? = nil) -> Bool {
         guard let tab = activeTerminal,
               let anchor = tab.focusedSurface ?? tab.surfaceTree.root?.leftmostLeaf(),
               let app = (NSApp.delegate as? AppDelegate)?.ghostty.app else { return false }
@@ -809,7 +846,7 @@ final class VaultsTabsModel: ObservableObject {
         let blank = Ghostty.SurfaceView(app)
         guard let newTree = try? tab.surfaceTree.inserting(view: blank, at: anchor, direction: direction) else { return false }
         tab.surfaceTree = newTree
-        connectSavedHostInPane(host: effective, surface: blank)
+        connectSavedHostInPane(host: effective, surface: blank, sudoPassword: sudoPassword)
         return true
     }
 
@@ -928,7 +965,8 @@ final class VaultsTabsModel: ObservableObject {
         try? FileManager.default.removeItem(atPath: path)
     }
 
-    private func startSSHConnection(app: ghostty_app_t, command: String, name: String, host: SavedHost?) -> TerminalTab? {
+    private func startSSHConnection(app: ghostty_app_t, command: String, name: String, host: SavedHost?,
+                                    sudoPassword: String? = nil) -> TerminalTab? {
         crashTrace("startSSHConnection")
         let needsPassword = sshNeedsPassword(host)
         // Always start over a blank placeholder surface; ssh is spawned only
@@ -946,6 +984,7 @@ final class VaultsTabsModel: ObservableObject {
         crashTrace("startSSHConnection: HostManagerController.showed")
 
         let model = SSHConnectionModel(title: host?.label ?? name, host: host, needsPassword: needsPassword)
+        model.sudoAutoPassword = sudoPassword
         let controller = SSHConnectionController(model: model, surfaceView: surface, tabsModel: self)
         connections[surface.id] = ActiveConnection(model: model, controller: controller, command: command)
         crashTrace("startSSHConnection: connection registered")
@@ -1249,9 +1288,81 @@ final class VaultsTabsModel: ObservableObject {
             // and `&&` chains work like in any shell.
             if let host = model.host {
                 let startup = host.initialCommand.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !startup.isEmpty { send(startup, to: surface) }
+                if !startup.isEmpty {
+                    send(startup, to: surface)
+                    // The docker-attach "copy session" flow runs `sudo docker
+                    // exec …`: watch for the sudo password prompt and answer it
+                    // with the saved password automatically.
+                    if let pw = model.sudoAutoPassword, !pw.isEmpty, startup.hasPrefix("sudo ") {
+                        armSudoPasswordResponder(surface: surface, password: pw)
+                    }
+                }
             }
         }
+    }
+
+    // MARK: - Sudo password auto-answer
+
+    /// Per-surface timers watching for a sudo password prompt after a
+    /// `sudo …` startup command (docker attach), keyed by surface id.
+    private var sudoResponders: [UUID: Timer] = [:]
+
+    /// Poll the fresh shell's visible text for a sudo password prompt and, on
+    /// match, type `password` + Enter. Stops after one send, on timeout (~10s),
+    /// or when the surface is gone — so a wrong password just falls back to the
+    /// user typing it manually. Runs on the main run loop (Timer).
+    private func armSudoPasswordResponder(surface: Ghostty.SurfaceView, password: String) {
+        guard sudoResponders[surface.id] == nil, !password.isEmpty else { return }
+        var attempts = 0
+        let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            attempts += 1
+            guard attempts <= 40 else {
+                self.stopSudoResponder(for: surface.id)
+                return
+            }
+            guard let sv = self.surface(withID: surface.id) else {
+                self.stopSudoResponder(for: surface.id)
+                return
+            }
+            guard Self.matchesSudoPasswordPrompt(sv.liveVisibleText()) else { return }
+            self.sendRawText(password, to: sv)
+            self.stopSudoResponder(for: surface.id)
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        sudoResponders[surface.id] = timer
+    }
+
+    private func stopSudoResponder(for surfaceID: UUID) {
+        sudoResponders[surfaceID]?.invalidate()
+        sudoResponders[surfaceID] = nil
+    }
+
+    /// Type `text` as individual key events (NOT `sendText`, which is a bracketed
+    /// paste — its escape markers would corrupt a password read by sudo) and
+    /// submit with a real Enter. Called from the main run loop.
+    private func sendRawText(_ text: String, to surface: Ghostty.SurfaceView) {
+        guard let model = surface.surfaceModel else { return }
+        MainActor.assumeIsolated {
+            for ch in text {
+                model.sendKeyEvent(Ghostty.Input.KeyEvent(key: .a, action: .press, text: String(ch)))
+            }
+            model.sendKeyEvent(Ghostty.Input.KeyEvent(key: .enter, action: .press))
+        }
+    }
+
+    /// Best-effort sudo password prompt detection on the last visible line:
+    /// "[sudo] password for user:", "password for user@host:", or a bare
+    /// "password:" (su). Scoped — this only runs right after a `sudo …`
+    /// startup command, so a false positive is unlikely.
+    static func matchesSudoPasswordPrompt(_ text: String) -> Bool {
+        let lines = text.split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        guard let last = lines.last else { return false }
+        let l = last.lowercased()
+        guard l.contains("password") else { return false }
+        return l.contains("[sudo]") || l.contains("password for ") || l == "password:" || l.hasPrefix("password:")
     }
 
     /// A tab label unique among open tabs: `base`, else `base (1)`, `base (2)`…
@@ -1338,7 +1449,8 @@ final class VaultsTabsModel: ObservableObject {
     /// pane rather than a new tab — backs the split chooser's saved-host rows.
     /// The popup shows over this pane; on connect the live terminal replaces it
     /// in place, and the per-surface connection registry handles the rest.
-    func connectSavedHostInPane(host: SavedHost, surface: Ghostty.SurfaceView) {
+    func connectSavedHostInPane(host: SavedHost, surface: Ghostty.SurfaceView,
+                                sudoPassword: String? = nil) {
         crashTrace("connectSavedHostInPane \(host.displayLabel)")
         guard let tab = tab(containing: surface),
               let node = tab.surfaceTree.root?.node(view: surface),
@@ -1369,6 +1481,7 @@ final class VaultsTabsModel: ObservableObject {
         }
 
         let model = SSHConnectionModel(title: host.displayLabel, host: host, needsPassword: needsPassword)
+        model.sudoAutoPassword = sudoPassword
         if !needsPassword { model.passwordFilePath = passwordFile; model.jumpPasswordFilePath = jumpPasswordFile }
         let controller = SSHConnectionController(model: model, surfaceView: boundSurface, tabsModel: self)
         connections[boundSurface.id] = ActiveConnection(model: model, controller: controller, command: command)

@@ -9,6 +9,16 @@ enum ConflictResolution {
     case merge     // directories: copy contents over the existing folder
 }
 
+/// A backend that can drive `/usr/bin/sftp` against its remote target — the
+/// local⇄remote transfer leg. Both `RemoteFileBackend` (plain host) and
+/// `ContainerFileBackend` (docker container) provide it.
+protocol SFTPTransferSource {
+    var remoteTarget: String { get }
+    var transferOptions: [String] { get }
+    var transferEnv: [String: String] { get }
+    var transferPort: Int { get }
+}
+
 /// Copies a `FileItem` from one backend into another backend's directory,
 /// over local FS and/or `scp`. Single-item for now (the context-menu action).
 enum FileTransfer {
@@ -59,12 +69,20 @@ enum FileTransfer {
         // mount, so it plays the "local" side of the transfer.
         case (is LocalFileBackend, let d as RemoteFileBackend),
              (is SMBFileBackend, let d as RemoteFileBackend):
-            try await sftp(localPath: item.path, isDir: item.isDirectory,
-                           remote: d, remotePath: destPath, upload: true)
+            try await sftpUp(localPath: item.path, isDir: item.isDirectory,
+                             backend: d, remotePath: destPath, upload: true)
         case (let s as RemoteFileBackend, is LocalFileBackend),
              (let s as RemoteFileBackend, is SMBFileBackend):
-            try await sftp(localPath: destPath, isDir: item.isDirectory,
-                           remote: s, remotePath: item.path, upload: false)
+            try await sftpUp(localPath: destPath, isDir: item.isDirectory,
+                             backend: s, remotePath: item.path, upload: false)
+
+        // Local ⇄ docker container → host-temp relay (`docker cp` on each side).
+        case (is LocalFileBackend, let d as ContainerFileBackend):
+            try await d.transferIn(fromLocal: item.path,
+                                   destDir: (destPath as NSString).deletingLastPathComponent)
+        case (let s as ContainerFileBackend, is LocalFileBackend),
+             (let s as ContainerFileBackend, is SMBFileBackend):
+            try await s.transferOut(itemPath: item.path, toLocal: destPath)
 
         // Server ⇄ server → relay through this machine (download then upload).
         // (SFTPView normally routes these via `serverToServer` for the direct/
@@ -79,8 +97,8 @@ enum FileTransfer {
 
     // MARK: SFTP (local ⇄ remote)
 
-    private static func sftp(localPath: String, isDir: Bool,
-                             remote: RemoteFileBackend, remotePath: String, upload: Bool) async throws {
+    static func sftpUp(localPath: String, isDir: Bool,
+                               backend: SFTPTransferSource, remotePath: String, upload: Bool) async throws {
         let r = isDir ? "-r " : ""
         let line = upload
             ? "put \(r)\(batchQuote(localPath)) \(batchQuote(remotePath))"
@@ -91,9 +109,9 @@ enum FileTransfer {
         try (line + "\n").write(to: batch, atomically: true, encoding: .utf8)
         defer { try? FileManager.default.removeItem(at: batch) }
 
-        var args = remote.transferOptions
-        args += ["-o", "Port=\(remote.transferPort)", "-b", batch.path, remote.remoteTarget]
-        let res = try await RemoteFileBackend.runProcess("/usr/bin/sftp", args, env: remote.transferEnv)
+        var args = backend.transferOptions
+        args += ["-o", "Port=\(backend.transferPort)", "-b", batch.path, backend.remoteTarget]
+        let res = try await RemoteFileBackend.runProcess("/usr/bin/sftp", args, env: backend.transferEnv)
         guard res.status == 0 else {
             throw FileOpError(message: res.stderr.isEmpty ? "Transfer failed." : res.stderr)
         }
@@ -175,8 +193,8 @@ enum FileTransfer {
         defer { try? FileManager.default.removeItem(at: dir) }
         let local = dir.appendingPathComponent((srcPath as NSString).lastPathComponent).path
 
-        try await sftp(localPath: local, isDir: isDir, remote: src, remotePath: srcPath, upload: false) // download
-        try await sftp(localPath: local, isDir: isDir, remote: dst, remotePath: dstPath, upload: true)  // upload
+        try await sftpUp(localPath: local, isDir: isDir, backend: src, remotePath: srcPath, upload: false) // download
+        try await sftpUp(localPath: local, isDir: isDir, backend: dst, remotePath: dstPath, upload: true)  // upload
     }
 
     /// Quote a path for an sftp batch-file command (double quotes; escape `"` `\`).

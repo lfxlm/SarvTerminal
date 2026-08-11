@@ -560,9 +560,14 @@ fn wakeupCallback(
     t.drainMailbox() catch |err|
         log.err("error draining mailbox err={}", .{err});
 
-    // Render immediately. The GPU's VSync handles frame pacing,
-    // so calling updateFrame on every IO wakeup is safe and ensures
-    // the terminal always shows the most recent output.
+    // Render immediately on each wakeup — the ORIGINAL fork behavior, which
+    // the user confirmed was smooth ("cat wasn't slow before"). A coalescing
+    // timer made output visibly segmented under this fork's yieldToDemand/
+    // lockDemand locking (the renderer's per-10ms lock acquisition contends
+    // with the IO parse thread on every batch). The pty gather stage already
+    // coalesces byte bursts into relatively few large batches, so rendering
+    // per wakeup is cheap; the real stalls (link detection, log flood) are
+    // fixed elsewhere.
     _ = renderCallback(t, undefined, undefined, {});
 
     // PageList mutations maintain their own compression dirty state. Checking

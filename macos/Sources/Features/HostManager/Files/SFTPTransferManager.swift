@@ -51,6 +51,11 @@ final class SFTPTransferManager: ObservableObject {
     private init() {}
 
     @Published var transfers: [TransferRecord] = []
+    /// Recent measured throughput samples used by the transfer-center chart.
+    /// Keep this bounded so the visual history cannot become another leak.
+    @Published private(set) var speedSamples: [Double] = []
+
+    private let maxSpeedSamples = 36
 
     /// All in-flight transfer tasks, keyed by record ID, for cancellation.
     private var activeTasks: [UUID: Task<Void, Never>] = [:]
@@ -75,9 +80,28 @@ final class SFTPTransferManager: ObservableObject {
         if let id {
             activeTasks[id]?.cancel()
             activeTasks[id] = nil
+            // A cancelled transfer can't be retried; drop its handler so the
+            // captured source/dest tabs are released.
+            retryHandlers[id] = nil
         } else {
             for (_, task) in activeTasks { task.cancel() }
             activeTasks.removeAll()
+            retryHandlers.removeAll()
+        }
+    }
+
+    /// Remove finished, failed, and cancelled records while preserving every
+    /// transfer that is still running.
+    func clearCompleted() {
+        let activeIDs = Set(transfers.filter { $0.status == .inProgress }.map(\.id))
+        transfers.removeAll { !activeIDs.contains($0.id) }
+        retryHandlers = retryHandlers.filter { activeIDs.contains($0.key) }
+    }
+
+    private func appendSpeedSample(_ speed: Double) {
+        speedSamples.append(max(0, speed))
+        if speedSamples.count > maxSpeedSamples {
+            speedSamples.removeFirst(speedSamples.count - maxSpeedSamples)
         }
     }
 
@@ -91,6 +115,10 @@ final class SFTPTransferManager: ObservableObject {
             let recentCompleted = nonActive.suffix(maxCompletedRecords)
             let recentIds = Set(recentCompleted.map(\.id))
             transfers = transfers.filter { $0.status == .inProgress || recentIds.contains($0.id) }
+            // Drop retry handlers for records that were evicted; they'd otherwise
+            // keep the captured source/dest SFTP tabs alive forever.
+            let keptIds = Set(transfers.map(\.id))
+            retryHandlers = retryHandlers.filter { keptIds.contains($0.key) }
         }
     }
 
@@ -118,10 +146,15 @@ final class SFTPTransferManager: ObservableObject {
         transfers.append(record)
 
         // Capture everything the retry button needs, keyed by this record's id.
-        let sourceTabRef = sourceTab
-        let destTabRef = destTab
-        retryHandlers[id] = { [weak self] in
-            self?.retryTransfer(id: id, sourceTab: sourceTabRef, destTab: destTabRef,
+        // Do not let a finished transfer keep both browser tabs (and their
+        // complete directory history/listing) alive just for Retry. If either
+        // tab was closed, the retry action simply becomes unavailable.
+        retryHandlers[id] = { [weak self, weak sourceTab, weak destTab] in
+            guard let sourceTab, let destTab else {
+                self?.retryHandlers[id] = nil
+                return
+            }
+            self?.retryTransfer(id: id, sourceTab: sourceTab, destTab: destTab,
                                 item: item, resolution: resolution)
         }
 
@@ -251,6 +284,10 @@ final class SFTPTransferManager: ObservableObject {
             else { return false }
             transfers[idx].transferred = size ?? transfers[idx].transferred
             transfers[idx].bytesPerSecond = Double(transfers[idx].transferred) / elapsed
+            let totalSpeed = transfers
+                .filter { $0.status == .inProgress }
+                .reduce(0) { $0 + max(0, $1.bytesPerSecond) }
+            appendSpeedSample(totalSpeed)
             return true
         }
 
@@ -263,12 +300,14 @@ final class SFTPTransferManager: ObservableObject {
                 }
                 transfers[idx].status = .completed
             }
+            retryHandlers[id] = nil
             cleanupCompletedRecords()
         } catch {
             if Task.isCancelled {
                 if let idx = transfers.firstIndex(where: { $0.id == id }) {
                     transfers[idx].status = .cancelled
                 }
+                retryHandlers[id] = nil
             } else {
                 let msg = (error as? FileOpError)?.message
                     ?? error.localizedDescription

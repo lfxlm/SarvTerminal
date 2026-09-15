@@ -21,6 +21,9 @@ protocol FileBackend {
     /// local backend; a downloaded temp copy for a remote one) — used by the
     /// file viewer.
     func localCopy(of item: FileItem) async throws -> URL
+    /// Remove a temporary local copy returned by `localCopy`, if applicable.
+    /// Local backends intentionally do nothing.
+    func removeLocalCopy(_ url: URL)
     /// Write `text` back to `item` (in place locally; upload for remote).
     func save(_ text: String, to item: FileItem) async throws
     /// Current size of a file in bytes (nil if missing) — polled to drive
@@ -35,6 +38,7 @@ protocol FileBackend {
 
 extension FileBackend {
     func disconnect() {}
+    func removeLocalCopy(_ url: URL) {}
     var supportsPermissions: Bool { true }
 
     /// Join a directory and a child name with a single "/".
@@ -143,19 +147,18 @@ final class RemoteFileBackend: FileBackend, SFTPTransferSource {
     init(host: SavedHost) {
         self.host = host
         self.location = .host(host)
-        // Look up the jump host's password if proxyJump is configured.
-        let jumpHostID = host.proxyJump.isEmpty ? nil : host.proxyJump
-        let jumpPassword: String?
-        if let jumpHostID {
-            jumpPassword = SavedHostsStore.shared.hosts.first { $0.jumpString == jumpHostID }?.password
-        } else {
-            jumpPassword = nil
-        }
+        // Build the ordered jump-host askpass list with PORT-STRIPPED prompt IDs
+        // (ssh's password prompt never includes the port), so sftp/ssh can
+        // authenticate through the bastion — matching how the terminal connection
+        // sets up its askpass. The legacy single-hop path embedded the port in the
+        // match ID, which never matched ssh's `user@host's password:` prompt and
+        // made SFTP through a jump host fail.
+        let jumpHosts = host.proxyJump.isEmpty
+            ? []
+            : VaultsTabsModel.jumpHostPasswords(for: host.proxyJump)
         self.askpassEnv = host.password.isEmpty
             ? [:]
-            : SSHAskpass.env(forPassword: host.password,
-                             jumpHostID: jumpHostID,
-                             jumpPassword: jumpPassword)
+            : SSHAskpass.env(forPassword: host.password, jumpHosts: jumpHosts)
     }
 
     private var target: String {
@@ -206,7 +209,22 @@ final class RemoteFileBackend: FileBackend, SFTPTransferSource {
     }
 
     func setPermissions(_ path: String, octal: String) async throws {
-        try await runChecked(ssh: ["chmod", octal, sftpQuote(path)])
+        do {
+            try await runChecked(ssh: ["chmod", octal, sftpQuote(path)])
+        } catch {
+            // Remote systems may localize chmod's diagnostic (for example,
+            // Chinese "operation not permitted"), so do not rely on matching
+            // the English text before attempting the sudo fallback.
+            guard !host.password.isEmpty else {
+                throw error
+            }
+            let result = try await runRoot("chmod \(octal) -- \(sftpQuote(path))")
+            guard result.status == 0 else {
+                throw FileOpError(message: result.stderr.isEmpty
+                                  ? "Permission denied. Remote sudo chmod failed."
+                                  : result.stderr.trimmingCharacters(in: .whitespacesAndNewlines))
+            }
+        }
     }
 
     func exists(_ path: String) async throws -> Bool {
@@ -234,6 +252,14 @@ final class RemoteFileBackend: FileBackend, SFTPTransferSource {
             throw FileOpError(message: res.stderr.isEmpty ? "Couldn't open file." : res.stderr)
         }
         return dest
+    }
+
+    func removeLocalCopy(_ url: URL) {
+        // Only remove our own viewer directories. This guard prevents a bad or
+        // stale model from deleting an unrelated local file.
+        let name = url.deletingLastPathComponent().lastPathComponent
+        guard name.hasPrefix("sarv-view-") else { return }
+        try? FileManager.default.removeItem(at: url.deletingLastPathComponent())
     }
 
     func save(_ text: String, to item: FileItem) async throws {
@@ -283,6 +309,14 @@ final class RemoteFileBackend: FileBackend, SFTPTransferSource {
         args.append(target)
         args.append(remoteArgs.joined(separator: " "))
         return try await Self.runProcess("/usr/bin/ssh", args, env: askpassEnv)
+    }
+
+    private func runRoot(_ command: String) async throws -> ProcessResult {
+        var args = sshOptions()
+        if host.port != 22 { args += ["-p", "\(host.port)"] }
+        args += [target, "sudo -S -p '' \(command)"]
+        return try await Self.runProcess("/usr/bin/ssh", args, env: askpassEnv,
+                                         stdin: host.password + "\n")
     }
 
     // MARK: Parsing

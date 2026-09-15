@@ -102,15 +102,19 @@ struct VaultsRootView: View {
                     .zIndex(2)
             }
         }
-        // SFTP side panel — one instance PER opened host, so switching between
-        // servers doesn't destroy the previous one's connection or transfer
-        // records. Every panel stays mounted; only the active one is visible.
-        // Controlled by offset + opacity instead of conditional creation.
+        // SFTP side panel — keep it mounted only while it has active transfers.
+        // Once idle and hidden, the panel releases its backend; completed rows
+        // are retained separately as bounded per-location history.
         .overlay {
             ForEach(tabs.sftpPanelLocations, id: \.locationID) { location in
                 let active = tabs.sftpPanelLocation?.locationID == location.locationID
                 let shown = active && tabs.sftpPanelVisible
-                SftpSidePanelView(location: location, onClose: { tabs.closeSftpPanel() })
+                SftpSidePanelView(
+                    location: location,
+                    onClose: { tabs.closeSftpPanel() },
+                    isVisible: shown,
+                    onIdle: { tabs.removeSftpPanel(locationID: location.locationID) }
+                )
                     .offset(x: shown ? 0 : 420)
                     .opacity(shown ? 1 : 0)
                     .allowsHitTesting(shown)

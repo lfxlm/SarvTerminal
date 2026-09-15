@@ -20,9 +20,14 @@ final class ContainerFileBackend: FileBackend, SFTPTransferSource {
         self.containerName = container
         self.needsSudo = needsSudo
         self.location = .container(host: host, name: container, needsSudo: needsSudo)
+        // Jump-host askpass (port-stripped prompt IDs) so the docker host can be
+        // reached through a bastion — same as RemoteFileBackend / the terminal.
+        let jumpHosts = host.proxyJump.isEmpty
+            ? []
+            : VaultsTabsModel.jumpHostPasswords(for: host.proxyJump)
         self.askpassEnv = host.password.isEmpty
             ? [:]
-            : SSHAskpass.env(forPassword: host.password)
+            : SSHAskpass.env(forPassword: host.password, jumpHosts: jumpHosts)
     }
 
     /// `sudo -S docker` / `docker` — the prefix for container commands.

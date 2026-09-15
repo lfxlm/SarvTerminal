@@ -7,7 +7,8 @@ import AppKit
 /// parsing a set of `KEY:value` lines printed by a small remote shell script.
 /// Reference metric set mirrors common server-monitoring UIs (Termius-style
 /// host stats / cloud consoles / htop + nvtop): CPU%, load, cores, memory,
-/// disk, and NVIDIA GPU state when present.
+/// disk, and GPU/NPU state when present. Both NVIDIA (`nvidia-smi`) and
+/// Huawei Atlas (`npu-smi`) accelerators are detected.
 enum ServerMonitorService {
     struct MetricRow {
         let key: String
@@ -19,6 +20,12 @@ enum ServerMonitorService {
     /// `/proc/meminfo` (present on every Linux), not `free` (absent on minimal
     /// images / busybox). Values: CPU%, load, cores, MEM=totalKB usedKB, one
     /// DISK=fs|size|used|pct|mount per real filesystem, GPU.
+    ///
+    /// GPU/NPU probing order: NVIDIA first, then Huawei Atlas. Each emits a
+    /// single `GPU:` line with a comma-separated
+    /// `name,mem_used,mem_total,util,temp` payload so the Swift side parses
+    /// both kinds identically. `npu-smi info` (Atlas) has a non-CSV table
+    /// layout, so we pull the values with awk/grep instead of CSV parsing.
     private static let script = """
     echo "HOST:$(hostname 2>/dev/null)"
     echo "OS:$(sed -n 's/^PRETTY_NAME="\\(.*\\)"/\\1/p' /etc/os-release 2>/dev/null)"
@@ -28,8 +35,23 @@ enum ServerMonitorService {
     echo "CPU:$(top -bn1 2>/dev/null | awk '/%Cpu/{print 100-$8}')"
     echo "MEM:$(awk '/^MemTotal:/{t=$2} /^MemAvailable:/{a=$2} END{print t, t-a}' /proc/meminfo 2>/dev/null)"
     df -h 2>/dev/null | awk 'NR>1 && $6 !~ /^\\/(proc|sys|dev\\/shm|run|run\\/lock|dev\\/mqueue|dev\\/pts)/ {print "DISK:"$1"|"$2"|"$3"|"$5"|"$6}'
-    echo "GPU:$(nvidia-smi --query-gpu=name,memory.used,memory.total,utilization.gpu,temperature.gpu --format=csv,noheader,nounits 2>/dev/null | head -1)"
-    echo "GPUERR:$(nvidia-smi 2>&1 >/dev/null | head -1)"
+    if command -v nvidia-smi >/dev/null 2>&1; then
+      echo "GPU:$(nvidia-smi --query-gpu=name,memory.used,memory.total,utilization.gpu,temperature.gpu --format=csv,noheader,nounits 2>/dev/null | head -1)"
+    elif command -v npu-smi >/dev/null 2>&1; then
+      _npu_info=$(npu-smi info 2>/dev/null)
+      _npu_board=$(echo "$_npu_info" | awk -F'|' '/^\\| [0-9]/{ if ($2 ~ /[A-Za-z]/) { print $2"|"$3"|"$4 } }' | head -1)
+      _npu_name=$(echo "$_npu_board" | cut -d'|' -f1 | awk '{print $NF}')
+      _npu_health=$(echo "$_npu_board" | cut -d'|' -f2 | tr -d ' ')
+      _npu_temp=$(echo "$_npu_board" | cut -d'|' -f3 | awk '{print $2}')
+      _npu_chip=$(echo "$_npu_info" | awk -F'|' '/^\\| [0-9]/{ if ($3 ~ /:/) { print $4 } }' | head -1)
+      _npu_aicore=$(echo "$_npu_chip" | awk '{print $1}')
+      _npu_mem_used=$(echo "$_npu_chip" | awk '{print $2}')
+      _npu_mem_total=$(echo "$_npu_chip" | awk '{print $4}')
+      echo "GPU:${_npu_name},${_npu_mem_used},${_npu_mem_total},${_npu_aicore},${_npu_temp}"
+      echo "GPUHEALTH:${_npu_health}"
+    else
+      echo "GPU:"
+    fi
     """
 
     static func fetch(host: SavedHost) async -> ServerMetrics {
@@ -73,7 +95,8 @@ enum ServerMonitorService {
             let parts = gpu.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
             if parts.count >= 5 {
                 m.gpuName = parts[0]
-                // nvidia-smi reports memory in MiB; store raw and format later.
+                // nvidia-smi reports memory in MiB (npu-smi in MB); both are
+                // close enough that we store raw and format later.
                 m.gpuMemUsedMiB = Int64(parts[1]) ?? 0
                 m.gpuMemTotalMiB = Int64(parts[2]) ?? 0
                 m.gpuUtil = parts[3]
@@ -81,6 +104,9 @@ enum ServerMonitorService {
             } else {
                 m.gpuName = gpu
             }
+            // Huawei Atlas NPUs expose a health state (e.g. "OK"); NVIDIA has
+            // no equivalent and leaves this empty.
+            m.gpuHealth = rows["GPUHEALTH"]?.first ?? ""
         }
         return m
     }
@@ -115,6 +141,8 @@ struct ServerMetrics: Equatable {
     var gpuMemTotalMiB: Int64 = 0
     var gpuUtil: String = ""
     var gpuTemp: String = ""
+    /// Huawei Atlas NPU health state ("OK" etc.); empty for NVIDIA.
+    var gpuHealth: String = ""
     var error: String?
 
     var memPercent: Double? {
@@ -392,7 +420,7 @@ struct ServerMonitorView: View {
             if model.metrics.gpuName.isEmpty {
                 HStack(spacing: 8) {
                     Image(systemName: "gpu").foregroundStyle(.secondaryText)
-                    Text("No NVIDIA GPU detected").font(.caption).foregroundStyle(.secondaryText)
+                    Text("No GPU / NPU detected").font(.caption).foregroundStyle(.secondaryText)
                 }
                 .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -406,6 +434,10 @@ struct ServerMonitorView: View {
                     gauge(value: Double(model.metrics.gpuUtil).map { $0 / 100 }, color: .purple)
                     Text("Utilization: \(model.metrics.gpuUtil)%")
                         .font(.caption).foregroundStyle(.secondaryText)
+                    if !model.metrics.gpuHealth.isEmpty {
+                        Text("Health: \(model.metrics.gpuHealth)")
+                            .font(.caption).foregroundStyle(.secondaryText)
+                    }
                 }
             }
         }

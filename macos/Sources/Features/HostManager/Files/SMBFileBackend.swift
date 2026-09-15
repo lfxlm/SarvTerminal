@@ -22,6 +22,10 @@ final class SMBFileBackend: FileBackend {
 
     /// Cached mount point once the share is mounted.
     private var mountPoint: String?
+    /// Whether this backend mounted the share itself (so `disconnect` may
+    /// unmount it). False when we reuse a share the user already mounted (e.g.
+    /// via Finder) — we must not unmount a mount we don't own.
+    private var ownsMount = false
     private let local = LocalFileBackend()
 
     init(connection: SMBConnection) {
@@ -35,8 +39,9 @@ final class SMBFileBackend: FileBackend {
 
     func homeDirectory() async throws -> String {
         if let mp = mountPoint { return mp }
-        let mp = try await Self.mount(connection)
+        let (mp, owns) = try await Self.mount(connection)
         mountPoint = mp
+        ownsMount = owns
         return mp
     }
 
@@ -77,10 +82,13 @@ final class SMBFileBackend: FileBackend {
     }
 
     /// Unmount the share (best effort) and drop the cached mount point. Never
-    /// throws to the caller — disconnect is a cleanup path.
+    /// throws to the caller — disconnect is a cleanup path. Only unmounts a
+    /// share this backend mounted itself; a reused (user-mounted) share is left
+    /// untouched.
     func disconnect() {
-        guard let mp = mountPoint else { return }
+        guard let mp = mountPoint, ownsMount else { return }
         mountPoint = nil
+        ownsMount = false
         Task.detached(priority: .utility) {
             try? Self.umount(mp)
         }
@@ -88,9 +96,21 @@ final class SMBFileBackend: FileBackend {
 
     // MARK: - Mounting
 
-    /// Mount `connection` and return the mount point path. Runs the blocking
+    /// Mount `connection` and return `(mount point, owns it)`. Runs the blocking
     /// `mount_smbfs` process off the main actor.
-    private static func mount(_ connection: SMBConnection) async throws -> String {
+    ///
+    /// If the share is *already* mounted (e.g. the user opened it in Finder and
+    /// it sits under `/Volumes`), `mount_smbfs` refuses with "File exists". In
+    /// that case we reuse the existing mount point instead of failing —
+    /// `owns` is false so `disconnect` won't unmount a mount we didn't create.
+    private static func mount(_ connection: SMBConnection) async throws -> (String, owns: Bool) {
+        // Reuse an already-mounted copy of this share (same server + share).
+        let existing = try? await Task.detached(priority: .userInitiated) {
+            Self.existingMount(connection)
+        }.value
+        if let existing {
+            return (existing, owns: false)
+        }
         let mountPoint = FileManager.default.temporaryDirectory
             .appendingPathComponent("sarv-smb-\(connection.id.uuidString)", isDirectory: true)
             .path
@@ -98,7 +118,47 @@ final class SMBFileBackend: FileBackend {
             try mountSync(connection: connection, mountPoint: mountPoint)
         }.value
         register(mountPoint: mountPoint)
-        return mountPoint
+        return (mountPoint, owns: true)
+    }
+
+    /// Find a mount point where `connection`'s share is already mounted, if any.
+    /// Parses `mount` output for an `smbfs` mount matching server + share.
+    nonisolated private static func existingMount(_ connection: SMBConnection) -> String? {
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/sbin/mount")
+        proc.arguments = []
+        let out = Pipe(), err = Pipe()
+        proc.standardOutput = out
+        proc.standardError = err
+        guard (try? proc.run()) != nil else { return nil }
+        let data = out.fileHandleForReading.readDataToEndOfFile()
+        proc.waitUntilExit()
+        guard proc.terminationStatus == 0 else { return nil }
+        guard let text = String(data: data, encoding: .utf8) else { return nil }
+
+        let server = connection.server.lowercased()
+        let share = connection.share.lowercased()
+        for line in text.split(separator: "\n") {
+            guard line.contains("smbfs") else { continue }
+            // Format: //[user@]server/share on /mount/point (smbfs, ...)
+            let parts = line.split(separator: " on ", maxSplits: 1, omittingEmptySubsequences: false)
+            guard parts.count == 2 else { continue }
+            let url = parts[0].trimmingCharacters(in: .whitespaces)
+            // Mount point is everything between " on " and the trailing " (smbfs, …".
+            let point = parts[1].split(separator: " (", maxSplits: 1).first.map(String.init)
+                ?? String(parts[1])
+            guard url.hasPrefix("//") else { continue }
+            // Strip optional "domain;user:pass@" leaving "server/share".
+            let hostPort = url.dropFirst(2).split(separator: "@", maxSplits: 1).last.map(String.init) ?? ""
+            let hostShare = hostPort.split(separator: "/", maxSplits: 1).map(String.init)
+            guard hostShare.count == 2 else { continue }
+            let host = hostShare[0].split(separator: ":", maxSplits: 1).first.map(String.init) ?? hostShare[0]
+            guard host.lowercased() == server,
+                  hostShare[1].lowercased() == share,
+                  !point.isEmpty else { continue }
+            return point
+        }
+        return nil
     }
 
     /// Blocking mount. Called from a detached task.

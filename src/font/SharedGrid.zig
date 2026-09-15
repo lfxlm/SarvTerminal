@@ -62,6 +62,12 @@ metrics: Metrics,
 /// to review call sites to ensure they are using the lock correctly.
 lock: std.Thread.RwLock,
 
+/// Maximum texture size an atlas is allowed to grow to. Beyond this the
+/// atlas is cleared (and the glyph cache evicted) instead of growing, so
+/// long-running sessions with many distinct glyphs (emoji, CJK, symbols)
+/// can't grow atlas memory without bound.
+const max_atlas_size: u32 = 4096;
+
 pub const init_tw = tripwire.module(enum {
     codepoints_capacity,
     glyphs_capacity,
@@ -275,9 +281,9 @@ pub fn renderGlyph(
     self.lock.lock();
     defer self.lock.unlock();
 
-    const gop = try self.glyphs.getOrPut(alloc, key);
-    if (gop.found_existing) return gop.value_ptr.*;
-    errdefer self.glyphs.removeByPtr(gop.key_ptr);
+    // If another thread beat us to it while we waited for the write lock,
+    // return their cached value.
+    if (self.glyphs.get(key)) |v| return v;
 
     // Get the presentation to determine what atlas to use
     try tw.check(.get_presentation);
@@ -307,30 +313,54 @@ pub fn renderGlyph(
         };
     }
 
-    // Render into the atlas
-    const glyph = self.resolver.renderGlyph(
-        alloc,
-        atlas,
-        index,
-        glyph_index,
-        render_opts,
-    ) catch |err| switch (err) {
-        // If the atlas is full, we resize it
-        error.AtlasFull => blk: {
-            try atlas.grow(alloc, atlas.size * 2);
-            break :blk try self.resolver.renderGlyph(
-                alloc,
-                atlas,
-                index,
-                glyph_index,
-                render_opts,
-            );
-        },
+    // Render into the atlas. We don't insert into the cache until the render
+    // succeeds so that an atlas eviction (below) can't invalidate a cache
+    // entry we already wrote.
+    const glyph = glyph: {
+        break :glyph self.resolver.renderGlyph(
+            alloc,
+            atlas,
+            index,
+            glyph_index,
+            render_opts,
+        ) catch |err| switch (err) {
+            // If the atlas is full, we resize it
+            error.AtlasFull => blk: {
+                // Once the atlas reaches its max size we can't grow anymore.
+                // Instead we evict the whole glyph cache and clear both
+                // atlases, then re-render the current glyph into the freshly
+                // cleared atlas. Glyph renders are transient (only valid for
+                // the frame being built), so clearing the caches is safe —
+                // the next frame simply re-renders its visible glyphs.
+                if (atlas.size >= max_atlas_size) {
+                    self.glyphs.clearRetainingCapacity();
+                    self.atlas_grayscale.clear();
+                    self.atlas_color.clear();
+                    break :blk try self.resolver.renderGlyph(
+                        alloc,
+                        atlas,
+                        index,
+                        glyph_index,
+                        render_opts,
+                    );
+                }
 
-        else => return err,
+                try atlas.grow(alloc, atlas.size * 2);
+                break :blk try self.resolver.renderGlyph(
+                    alloc,
+                    atlas,
+                    index,
+                    glyph_index,
+                    render_opts,
+                );
+            },
+
+            else => return err,
+        };
     };
 
     // Cache and return
+    const gop = try self.glyphs.getOrPut(alloc, key);
     gop.value_ptr.* = .{
         .glyph = glyph,
         .presentation = p,

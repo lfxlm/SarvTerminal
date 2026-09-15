@@ -180,8 +180,6 @@ private struct SnippetRow: View {
             }
             Spacer(minLength: 8)
             if hovering {
-                Button(action: onCopy) { Image(systemName: "doc.on.doc") }
-                    .buttonStyle(.borderless).help("Copy command")
                 Button(role: .destructive, action: onDelete) { Image(systemName: "trash") }
                     .buttonStyle(.borderless).foregroundStyle(.red).help("Delete snippet")
             }
@@ -203,6 +201,14 @@ private struct SnippetRow: View {
     /// SPECIFIC terminal (Execute in / Paste to submenus keep it compact).
     private var runControls: some View {
         HStack(spacing: 4) {
+            Button(action: onCopy) {
+                Image(systemName: "doc.on.doc").font(.system(size: 13))
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(.secondaryText)
+            .help("Copy command")
+            .hoverTipText("Copy command")
+
             Button(action: onRunFocused) {
                 Image(systemName: "play.circle.fill").font(.system(size: 16))
             }

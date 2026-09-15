@@ -35,11 +35,11 @@ struct UnifiedTransferTable: View {
                 HStack(spacing: 10) {
                     Text(loc(.source_column)).font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(.secondaryText)
-                        .frame(width: 95, alignment: .leading)
+                        .frame(width: 150, alignment: .leading)
                     Color.clear.frame(width: 10)
                     Text(loc(.destination_column)).font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(.secondaryText)
-                        .frame(width: 95, alignment: .leading)
+                        .frame(width: 150, alignment: .leading)
                     Text(loc(.file_column)).font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(.secondaryText)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -48,10 +48,12 @@ struct UnifiedTransferTable: View {
                         .frame(width: 70, alignment: .trailing)
                     Text(loc(.progress_column)).font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(.secondaryText)
-                        .frame(width: 110, alignment: .leading)
+                        .frame(width: 180, alignment: .leading)
                 }
-
-                Spacer(minLength: 0)
+                // Let the column group consume all remaining width. The file
+                // column is the flexible column; keeping a second spacer here
+                // would leave a large unused gap before the actions.
+                .frame(maxWidth: .infinity, alignment: .leading)
 
                 if !manager.transfers.isEmpty {
                     let hasActive = manager.transfers.contains(where: { $0.status == .inProgress })
@@ -134,6 +136,14 @@ private struct TransferRecordRow: View {
         }
     }
 
+    private func estimatedRemaining() -> String? {
+        guard record.totalSize > 0,
+              record.transferred < record.totalSize,
+              record.bytesPerSecond > 0 else { return nil }
+        let remaining = Double(record.totalSize - record.transferred) / record.bytesPerSecond
+        return formatElapsed(remaining)
+    }
+
     var body: some View {
         let fraction = record.totalSize > 0
             ? min(1, Double(record.transferred) / Double(record.totalSize))
@@ -148,7 +158,8 @@ private struct TransferRecordRow: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
-            .frame(width: 95, alignment: .leading)
+            .frame(width: 150, alignment: .leading)
+            .help(record.sourceLabel)
 
             // Arrow
             Image(systemName: "arrow.right")
@@ -165,7 +176,8 @@ private struct TransferRecordRow: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
-            .frame(width: 95, alignment: .leading)
+            .frame(width: 150, alignment: .leading)
+            .help(record.destLabel)
 
             // File name
             Text(record.fileName)
@@ -185,11 +197,24 @@ private struct TransferRecordRow: View {
                 switch record.status {
                 case .inProgress:
                     if record.totalSize > 0 {
-                        ProgressView(value: fraction)
-                            .progressViewStyle(.linear)
-                            .frame(width: 60)
-                            .hoverTip {
-                                String(format: "%.1f%%", fraction * 100) + " · " + formatElapsed(Date().timeIntervalSince(record.startedAt))
+                        VStack(alignment: .leading, spacing: 1) {
+                            HStack(spacing: 4) {
+                                ProgressView(value: fraction)
+                                    .progressViewStyle(.linear)
+                                    .frame(width: 60)
+                                if record.bytesPerSecond > 0 {
+                                    Text("\(byteString(Int64(record.bytesPerSecond)))/s")
+                                        .font(.system(size: 10).monospacedDigit())
+                                        .foregroundStyle(.tertiaryText)
+                                }
+                            }
+                            Text(estimatedRemaining().map { "剩余 \($0)" } ?? "计算剩余时间…")
+                                .font(.system(size: 10).monospacedDigit())
+                                .foregroundStyle(.secondaryText)
+                        }
+                        .hoverTip {
+                            String(format: "%.1f%%", fraction * 100) + " · " + formatElapsed(Date().timeIntervalSince(record.startedAt))
+                                + (estimatedRemaining().map { " · 剩余 \($0)" } ?? "")
                             }
                     } else {
                         ProgressView()
@@ -201,21 +226,18 @@ private struct TransferRecordRow: View {
                     }
                 case .completed:
                     Text(loc(.done)).foregroundStyle(.green)
-                case .failed:
-                    Text(loc(.failed)).foregroundStyle(.red)
+                case .failed(let reason):
+                    Text("\(loc(.failed)): \(reason)")
+                        .foregroundStyle(.red)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .help(reason)
                 case .cancelled:
                     Text(loc(.cancelled)).foregroundStyle(.secondaryText)
                 }
 
-                if record.status == .inProgress, record.bytesPerSecond > 0 {
-                    Text("\(byteString(Int64(record.bytesPerSecond)))/s")
-                        .font(.system(size: 11).monospacedDigit())
-                        .foregroundStyle(.tertiaryText)
-                }
             }
-            .frame(width: 110, alignment: .leading)
-
-            Spacer(minLength: 0)
+            .frame(width: 180, alignment: .leading)
 
             // Action
             switch record.status {

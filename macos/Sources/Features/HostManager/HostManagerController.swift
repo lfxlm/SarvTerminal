@@ -230,6 +230,7 @@ class HostManagerController: NSWindowController, NSWindowDelegate {
 
     /// The in-window file viewer/editor overlay (covers the tab bar + content).
     private var fileEditorOverlay: NSView?
+    private var fileEditorModel: FileViewerModel?
 
     /// Present the inbuilt file viewer/editor as a full-window overlay INSIDE
     /// this window (not a separate window), so it moves/resizes with the window
@@ -253,11 +254,14 @@ class HostManagerController: NSWindowController, NSWindowDelegate {
         host.autoresizingMask = [.width, .height]
         container.addSubview(host, positioned: .above, relativeTo: nil)
         fileEditorOverlay = host
+        fileEditorModel = model
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 
     func dismissFileEditor() {
+        fileEditorModel?.cleanup()
+        fileEditorModel = nil
         fileEditorOverlay?.removeFromSuperview()
         fileEditorOverlay = nil
     }

@@ -148,7 +148,10 @@ enum FileTransfer {
         if dst.usesKeyAuth || dst.hostPassword.isEmpty {
             // Forward our agent so A can authenticate to B with the key.
             args.insert("-A", at: 0)
-            args.append("scp -p -o BatchMode=yes -o StrictHostKeyChecking=accept-new "
+            // Do not preserve source mode/timestamps here. The destination
+            // account may be allowed to create the file but not chmod it;
+            // scp -p would then report a failed transfer after the data copy.
+            args.append("scp -o BatchMode=yes -o StrictHostKeyChecking=accept-new "
                         + "-P \(dst.transferPort) \(r)\(shquote(srcPath)) \(shquote(scpTo))")
         } else {
             // Feed B's password to scp-on-A via a temporary SSH_ASKPASS helper.
@@ -161,7 +164,7 @@ enum FileTransfer {
             printf '%s' "$SARV_BPW" | base64 -d
             SARVEOS
             SARV_BPW='\(b64)' SSH_ASKPASS="$AP" SSH_ASKPASS_REQUIRE=force \
-            scp -p -o StrictHostKeyChecking=accept-new -o NumberOfPasswordPrompts=1 \
+            scp -o StrictHostKeyChecking=accept-new -o NumberOfPasswordPrompts=1 \
             -P \(dst.transferPort) \(r)\(shquote(srcPath)) \(shquote(scpTo)) </dev/null
             rc=$?
             rm -f "$AP"

@@ -105,6 +105,10 @@ final class IncrementalLineFilter {
     /// Cap on retained output lines so a long-running tail doesn't grow without
     /// bound; oldest filtered lines are dropped.
     private let maxLines = 8000
+    /// Searching the complete terminal buffer duplicates it into a String
+    /// array. Keep the search working set bounded even when scrollback is much
+    /// larger (or a `tail -f` session runs for days).
+    private let maxInputBytes = 8 * 1024 * 1024
 
     private(set) var lines: [SearchLineFilter.Line] = []
 
@@ -127,7 +131,21 @@ final class IncrementalLineFilter {
         let sig = "\(matcher.signature)\u{1}\(b)\u{1}\(a)"
         // Drop the volatile trailing element (an incomplete line / the cursor
         // row); grep matches whole lines, and it'll be folded once it completes.
-        let complete = Array(rawText.components(separatedBy: "\n").dropLast())
+        let boundedText: String
+        if rawText.utf8.count > maxInputBytes {
+            // Keep complete lines from the tail; avoid splitting a UTF-8 scalar
+            // and avoid retaining the discarded prefix in the filter state.
+            let tail = Data(rawText.utf8.suffix(maxInputBytes))
+            let decoded = String(decoding: tail, as: UTF8.self)
+            if let firstNewline = decoded.firstIndex(of: "\n") {
+                boundedText = String(decoded[decoded.index(after: firstNewline)...])
+            } else {
+                boundedText = decoded
+            }
+        } else {
+            boundedText = rawText
+        }
+        let complete = Array(boundedText.components(separatedBy: "\n").dropLast())
 
         if sig != signature {
             signature = sig

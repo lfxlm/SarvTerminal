@@ -317,6 +317,9 @@ private struct VaultsSplitLeaf: View {
                     : "Broadcast input to this pane",
                 active: isTarget
             ) { VaultsTabsModel.shared.togglePaneBroadcast(surface: surfaceView) }
+            headerButton("plus.square.on.square", help: "Copy this session to a new split") {
+                VaultsTabsModel.shared.duplicatePane(surface: surfaceView)
+            }
             headerButton("sidebar.left", help: "Focus mode (⌘⇧M)") {
                 VaultsTabsModel.shared.toggleFocusMode()
             }
@@ -327,6 +330,17 @@ private struct VaultsSplitLeaf: View {
                     .padding(.horizontal, 7).padding(.vertical, 3)
                     .background(Capsule().fill(Color.red))
                     .fixedSize()
+                Button(loc(.cancel)) {
+                    VaultsTabsModel.shared.cancelClosePane(surface: surfaceView)
+                }
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(.white.opacity(0.9))
+                .buttonStyle(.plain)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(Capsule().fill(Color.white.opacity(0.14)))
+                .contentShape(Capsule())
+                .hoverTipText("Cancel closing this pane")
             }
             PaneCloseButton(armed: isArmed) {
                 VaultsTabsModel.shared.requestClosePane(surface: surfaceView)

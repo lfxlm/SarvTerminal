@@ -49,6 +49,7 @@ final class SFTPBrowserModel: ObservableObject {
     /// Visited-directory history for back/forward navigation.
     @Published private(set) var history: [String] = []
     @Published private(set) var historyIndex: Int = -1
+    private let maxHistoryEntries = 100
     var canGoBack: Bool { historyIndex > 0 }
     var canGoForward: Bool { historyIndex >= 0 && historyIndex < history.count - 1 }
 
@@ -143,6 +144,10 @@ final class SFTPBrowserModel: ObservableObject {
                     history.removeSubrange((historyIndex + 1)...)
                 }
                 history.append(newPath)
+                if history.count > maxHistoryEntries {
+                    let excess = history.count - maxHistoryEntries
+                    history.removeFirst(excess)
+                }
                 historyIndex = history.count - 1
             }
         } catch {

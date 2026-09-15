@@ -94,9 +94,12 @@ struct SFTPWindowView: View {
             }
         }
         .onDisappear {
-            // Unmount any SMB shares opened in this window.
-            leftTabs.disconnectAll()
-            rightTabs.disconnectAll()
+            // The window controller is reusable, but its hosting view survives
+            // close. Release all browser models/listings/history here instead of
+            // retaining every SFTP tab across window reopen cycles. In-flight
+            // transfer tasks keep their own strong references until completion.
+            leftTabs.removeAll()
+            rightTabs.removeAll()
         }
         // Dialogs
         .sheet(item: $hostPickerSide) { side in

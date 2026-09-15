@@ -1,29 +1,76 @@
 import SwiftUI
 
+/// Finished transfer history retained after an SFTP panel is released.
+@MainActor
+final class SFTPPanelTransferHistory {
+    static let shared = SFTPPanelTransferHistory()
+    private var entries: [String: [SFTPPanelTransfer]] = [:]
+    private var locationOrder: [String] = []
+    private let maxEntriesPerLocation = 50
+    private let maxLocations = 50
+
+    func load(for locationID: String) -> [SFTPPanelTransfer] {
+        touch(locationID)
+        return entries[locationID] ?? []
+    }
+
+    func save(_ transfers: [SFTPPanelTransfer], for locationID: String) {
+        let finished = transfers.filter {
+            if case .uploading = $0.status { return false }
+            return true
+        }
+        guard !finished.isEmpty else { return }
+        var merged = entries[locationID] ?? []
+        let ids = Set(finished.map(\.id))
+        merged.removeAll { ids.contains($0.id) }
+        merged.append(contentsOf: finished)
+        entries[locationID] = Array(merged.suffix(maxEntriesPerLocation))
+        touch(locationID)
+        while locationOrder.count > maxLocations {
+            entries[locationOrder.removeFirst()] = nil
+        }
+    }
+
+    func clear(for locationID: String) {
+        entries[locationID] = nil
+        locationOrder.removeAll { $0 == locationID }
+    }
+
+    private func touch(_ locationID: String) {
+        locationOrder.removeAll { $0 == locationID }
+        locationOrder.append(locationID)
+    }
+}
+
+struct SFTPPanelTransfer: Identifiable {
+    let id = UUID()
+    let fileName: String
+    let fileSize: Int64
+    let direction: Direction
+    var transferred: Int64
+    var bytesPerSecond: Double
+    var startTime: Date
+    var status: Status
+
+    enum Status { case uploading, completed, failed(String), cancelled }
+    enum Direction { case upload, download }
+}
+
 /// SFTP side panel that slides in from the right edge of the Vaults window.
 /// Shows a single-pane remote file browser for the connected SSH host, with
 /// an upload button to transfer local files to the server.
 struct SftpSidePanelView: View {
     let location: FileLocation
     let onClose: () -> Void
+    let isVisible: Bool
+    let onIdle: () -> Void
 
     @StateObject private var remote = SFTPBrowserModel()
 
     @ObservedObject private var lang = AppLanguageSettings.shared
 
     // ── Upload progress ───────────────────────────────────────────
-    struct UploadProgress: Identifiable {
-        let id = UUID()
-        let fileName: String
-        let fileSize: Int64     // 0 = indeterminate (dir)
-        let direction: Direction
-        var transferred: Int64
-        var bytesPerSecond: Double
-        var startTime: Date
-        var status: Status
-        enum Status { case uploading, completed, failed(String), cancelled }
-        enum Direction { case upload, download }
-    }
+    typealias UploadProgress = SFTPPanelTransfer
     @State private var uploads: [UploadProgress] = []
     @State private var activePollers: [Task<Void, Never>] = []
     /// In-flight upload/download Tasks keyed by record id — lets the per-row
@@ -76,7 +123,7 @@ struct SftpSidePanelView: View {
             }
             .buttonStyle(.plain)
             .help(loc(.upload_files))
-            Button(action: onClose) {
+            Button(action: requestClose) {
                 Image(systemName: "xmark")
                     .font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
             }
@@ -89,7 +136,7 @@ struct SftpSidePanelView: View {
     // MARK: - Body
 
     var body: some View {
-        VaultsEditorSidebar(onClose: onClose, initialWidth: 420, minWidth: 340) {
+        VaultsEditorSidebar(onClose: requestClose, initialWidth: 420, minWidth: 340) {
             VStack(spacing: 0) {
                 header
                 Divider()
@@ -120,7 +167,10 @@ struct SftpSidePanelView: View {
                 }
             }
         }
-        .onAppear { remote.connect(to: location) }
+        .onAppear {
+            uploads = SFTPPanelTransferHistory.shared.load(for: location.locationID)
+            remote.connect(to: location)
+        }
         // ── Dialogs ───────────────────────────────────────────────
         .onChange(of: showNewFolder) { visible in
             guard visible else { return }
@@ -210,6 +260,7 @@ struct SftpSidePanelView: View {
             activePollers.removeAll()
             reloadTask?.cancel()
             uploads.removeAll()
+            remote.disconnect()
         }
     }
 
@@ -247,6 +298,7 @@ struct SftpSidePanelView: View {
                         Button(loc(.clear_completed)) {
                             // Only drop finished records — never the in-flight ones.
                             uploads.removeAll { if case .uploading = $0.status { return false }; return true }
+                            SFTPPanelTransferHistory.shared.clear(for: location.locationID)
                         }
                             .controlSize(.small).buttonStyle(.plain)
                             .foregroundStyle(.secondaryText)
@@ -457,6 +509,7 @@ struct SftpSidePanelView: View {
                 defer {
                     poller.cancel()
                     activeTransfers.removeValue(forKey: pid)
+                    finishIfIdle()
                 }
                 do {
                     try await FileTransfer.copy(
@@ -602,6 +655,7 @@ struct SftpSidePanelView: View {
                 startTime: Date(),
                 status: .cancelled))
         }
+        saveTransferHistory()
     }
 
     /// Debounced reload: one refresh after the burst of upload completions settles.
@@ -645,6 +699,7 @@ struct SftpSidePanelView: View {
                     poller.cancel()
                     activePollers.removeAll { $0 == poller }
                     activeTransfers.removeValue(forKey: pid)
+                    finishIfIdle()
                 }
                 do {
                     try await FileTransfer.copy(
@@ -690,7 +745,32 @@ struct SftpSidePanelView: View {
     private func setStatus(_ id: UUID, _ status: UploadProgress.Status) {
         if let idx = uploads.firstIndex(where: { $0.id == id }) {
             uploads[idx].status = status
+            saveTransferHistory()
         }
+    }
+
+    private func saveTransferHistory() {
+        SFTPPanelTransferHistory.shared.save(uploads, for: location.locationID)
+    }
+
+    /// Hide the panel while work is active. When idle, release it immediately;
+    /// completed rows have already been copied into the shared history.
+    private func requestClose() {
+        onClose()
+        if activeTransfers.isEmpty {
+            saveTransferHistory()
+            remote.disconnect()
+            onIdle()
+        }
+    }
+
+    /// A hidden panel with no remaining work can be removed from the parent
+    /// model. This is called from each transfer's completion path.
+    private func finishIfIdle() {
+        guard activeTransfers.isEmpty, !isVisible else { return }
+        saveTransferHistory()
+        remote.disconnect()
+        onIdle()
     }
 
     // MARK: - Delete

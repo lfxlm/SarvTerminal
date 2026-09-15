@@ -57,6 +57,9 @@ final class SSHConnectionModel: ObservableObject {
     /// Curated, in-memory connection log shown in the "Show logs" panel — built
     /// from synthesized milestones and the real terminal error. No file on disk.
     @Published var logEntries: [SSHLogEntry] = []
+    /// Cap on log entries: reconnect storms must not grow the log forever.
+    /// Once the cap is hit we drop the OLDEST entries.
+    private let maxLogEntries = 200
     @Published var showLogs: Bool = false
     /// Path of the temp file holding the target host's password for the askpass helper.
     var passwordFilePath: String?
@@ -65,6 +68,9 @@ final class SSHConnectionModel: ObservableObject {
 
     func addLog(_ symbol: String, _ color: Color, _ text: String) {
         logEntries.append(SSHLogEntry(symbol: symbol, color: color, text: text))
+        if logEntries.count > maxLogEntries {
+            logEntries.removeFirst(logEntries.count - maxLogEntries)
+        }
     }
 
     /// Plain text of the log for the "Copy logs" button.

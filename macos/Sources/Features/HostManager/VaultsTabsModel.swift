@@ -270,9 +270,23 @@ final class VaultsTabsModel: ObservableObject {
         sftpPanelVisible = true
     }
 
-    /// Hide the SFTP panels. They stay mounted so their state survives.
+    /// Hide the SFTP panel. Active transfers keep its panel alive until they
+    /// finish; completed history is stored separately.
     func closeSftpPanel() {
         sftpPanelVisible = false
+    }
+
+    /// Remove an idle SFTP panel after its finished transfer history has been
+    /// copied to the shared history store.
+    func removeSftpPanel(locationID: String) {
+        guard let index = sftpPanelLocations.firstIndex(where: { $0.locationID == locationID }) else { return }
+        sftpPanelLocations.remove(at: index)
+        if sftpPanelActiveLocationID == locationID {
+            sftpPanelActiveLocationID = sftpPanelLocations.last?.locationID
+        }
+        if sftpPanelLocations.isEmpty {
+            sftpPanelVisible = false
+        }
     }
 
     /// Drives the ad-hoc Serial Console connect sheet (device + baud picker).
@@ -683,6 +697,7 @@ final class VaultsTabsModel: ObservableObject {
     private func teardownConnection(surfaceID: UUID) {
         crashTrace("teardownConnection \(surfaceID)")
         stopSudoResponder(for: surfaceID)
+        containerAttaches.removeValue(forKey: surfaceID)
         guard let conn = connections[surfaceID] else { crashTrace("teardownConnection: no connection"); return }
         conn.controller.stop()
         deleteTempFile(conn.model.passwordFilePath)
@@ -1015,13 +1030,13 @@ final class VaultsTabsModel: ObservableObject {
 
         if hasJump {
             // Jump-host path: ssh-keyscan can't tunnel through the jump host, so
-            // pre-scanning is useless and slow (each attempt blocks up to 6s).
-            // Instead, just clear any stale known_hosts entry for the target so
-            // ssh's accept-new accepts the current key. Skip the trust card — the
-            // user already trusts the jump host chain.
-            if await HostKeyScanner.isKnown(token) {
-                await HostKeyScanner.remove(token)
-            }
+            // pre-scanning is useless (and slow). We let ssh's `accept-new` handle
+            // an unknown target key directly; if the target's key has CHANGED
+            // since it was last trusted, ssh refuses and the controller surfaces
+            // the "Replace and continue" card so the user can trust the new key
+            // once. We deliberately do NOT clear the target's known_hosts entry
+            // here — wiping it on every connect would silently rotate a stable
+            // key and leave the host stuck in a spurious "key changed" loop.
             proceedConnect(model: model)
             return
         }
@@ -1659,6 +1674,10 @@ final class VaultsTabsModel: ObservableObject {
         // tab's launch command. A plain local shell instead duplicates at the
         // source cwd, set on the surface so it spawns there.
         let command = connections[surface.id]?.command ?? tab.launchCommand
+        // A connected SSH pane re-connects through the STAGED flow (saved password
+        // via askpass, no manual entry) rather than re-typing the ssh command —
+        // same as Duplicate Tab / the split chooser's saved-host rows.
+        let sourceHost = connections[surface.id]?.model.host
         let newView: Ghostty.SurfaceView = {
             if command == nil, let cwd = surface.pwd, !cwd.isEmpty {
                 var cfg = Ghostty.SurfaceConfiguration()
@@ -1668,13 +1687,14 @@ final class VaultsTabsModel: ObservableObject {
             return Ghostty.SurfaceView(app)
         }()
         let sourceAwaiting = awaitingChoice.contains(surface.id)
-        if !sourceAwaiting, let sourceOverride = tab.paneTitleOverrides[surface.id],
+        if !sourceAwaiting, sourceHost == nil, let sourceOverride = tab.paneTitleOverrides[surface.id],
            !sourceOverride.isEmpty {
             // Inherit only a STABLE override (an SSH host label, or a name carried
             // in from a drag) so a meaningful name follows the split. We must NOT
             // seed from the source's live title: its derived title (running
             // process / cwd) is already correct the instant the new shell spawns,
             // and pinning the live title would freeze e.g. "node" onto the pane.
+            // For an SSH split the staged flow sets its own host label.
             tab.paneTitleOverrides[newView.id] = sourceOverride
         }
         guard let newTree = try? tab.surfaceTree.inserting(
@@ -1687,9 +1707,12 @@ final class VaultsTabsModel: ObservableObject {
             return
         }
         Ghostty.moveFocus(to: newView)
-        // An SSH/launch command travels with the surface; re-run it. A plain
-        // local shell already spawned in the source cwd (set above).
-        if let command {
+        // SSH: run the staged connection IN this new split pane. A plain local
+        // shell already spawned in the source cwd (set above); a non-host command
+        // is re-typed.
+        if let sourceHost {
+            connectSavedHostInPane(host: sourceHost, surface: newView)
+        } else if let command {
             send(command, to: newView)
         }
     }
@@ -2108,6 +2131,16 @@ final class VaultsTabsModel: ObservableObject {
             title: "Close Terminal?",
             message: "This terminal still has a running process. If you close it the process will be killed."
         ) { [weak self] in self?.performClosePane(surface: surface) }
+    }
+
+    /// Cancel the first-stage SSH pane close confirmation without touching the
+    /// connection or the pane. This is intentionally separate from
+    /// `requestClosePane`: the latter advances an armed pane to the chooser,
+    /// while this action only clears the visual warning state.
+    @MainActor
+    func cancelClosePane(surface: Ghostty.SurfaceView) {
+        guard armedClosePaneID == surface.id else { return }
+        armedClosePaneID = nil
     }
 
     /// Turn a closed SSH pane into a fresh connection chooser: tear down the

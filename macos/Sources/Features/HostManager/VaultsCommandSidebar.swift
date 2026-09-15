@@ -156,6 +156,14 @@ private struct CommandRow: View {
                         .buttonStyle(.plain)
                         .help("Add to snippet")
                     }
+                    Button(action: { copyCommand() }) {
+                        Image(systemName: "doc.on.doc")
+                            .font(.system(size: 11, weight: .medium))
+                            .padding(.horizontal, 7).padding(.vertical, 4)
+                            .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.22)))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Copy command")
                     pill("Run", tint: .accentColor) { tabs.runInTargetTerminal(command) }
                     pill("Paste", tint: .secondary) { tabs.pasteToTargetTerminal(command) }
                 }
@@ -176,6 +184,12 @@ private struct CommandRow: View {
         }
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
+    }
+
+    /// Copy `command` to the pasteboard (works without an active terminal).
+    private func copyCommand() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(command, forType: .string)
     }
 
     private func pill(_ label: String, tint: Color, action: @escaping () -> Void) -> some View {

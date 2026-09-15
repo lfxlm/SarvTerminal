@@ -125,8 +125,16 @@ final class SSHConnectionController {
         guard let host = model.host else { fail(.hostKeyVerification); return }
         let token = HostKeyScanner.token(host: host.hostname, port: host.port)
         model.addLog("exclamationmark.shield.fill", .orange, "Host key changed")
+        let isJumpHost = !host.proxyJump.isEmpty
         Task { @MainActor in
-            let scan = await HostKeyScanner.scan(host: host.hostname, port: host.port)
+            // For a proxy-jump target, ssh connects THROUGH the jump host, so the
+            // key it verifies is the tunneled one. `ssh-keyscan` can't tunnel and
+            // only sees the directly-reachable key — which can differ from what ssh
+            // actually sees (a false "changed" that "Replace" can never fix). So for
+            // jump hosts we skip the direct scan (the fingerprint is unknowable
+            // here) and let "Replace" just drop the stale entry; ssh's `accept-new`
+            // then records the real tunneled key on reconnect.
+            let scan = isJumpHost ? nil : await HostKeyScanner.scan(host: host.hostname, port: host.port)
             model.scannedHostKeyLines = scan?.lines
             model.hostKeyToken = token
             model.showLogs = false
@@ -135,7 +143,9 @@ final class SSHConnectionController {
                 fingerprint: scan?.fingerprint ?? "—", changed: true))
             SarvNotifications.shared.notify(.hostKeyChanged(
                 host: host.displayLabel,
-                detail: "Server key is now \(scan?.fingerprint ?? token). Verify before trusting."))
+                detail: isJumpHost
+                    ? "The host key changed (target reached via a jump host). Replace it and reconnect."
+                    : "Server key is now \(scan?.fingerprint ?? token). Verify before trusting."))
         }
     }
 

@@ -55,4 +55,13 @@ final class SFTPTabGroup: ObservableObject {
             tab.browser.disconnect()
         }
     }
+
+    /// Release all browser tabs when the standalone SFTP window closes. The
+    /// window controller is intentionally reusable, but retaining every tab
+    /// across close/reopen cycles also retains listings, history and backends.
+    func removeAll() {
+        disconnectAll()
+        tabs.removeAll()
+        activeIndex = 0
+    }
 }

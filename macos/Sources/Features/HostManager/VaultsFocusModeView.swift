@@ -327,6 +327,18 @@ private struct FocusSidebarRow: View {
             }
             Spacer(minLength: 4)
             if hovering || isArmed {
+                if isArmed {
+                    Button(action: { VaultsTabsModel.shared.cancelClosePane(surface: surfaceView) }) {
+                        Text(loc(.cancel))
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(Capsule().fill(Color.red.opacity(0.85)))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Cancel closing this pane")
+                }
                 Button(action: onClose) {
                     Image(systemName: "xmark")
                         .font(.system(size: 9, weight: .bold))

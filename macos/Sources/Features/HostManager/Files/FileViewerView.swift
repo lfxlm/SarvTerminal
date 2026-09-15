@@ -36,6 +36,18 @@ final class FileViewerModel: ObservableObject {
     var isDirty: Bool { content != savedContent }
     private var autosaveWork: DispatchWorkItem?
 
+    /// Release the downloaded preview copy before the model is replaced.
+    /// This is explicit instead of relying on `deinit`, because deinitializers
+    /// are nonisolated under Swift concurrency checking.
+    func cleanup() {
+        autosaveWork?.cancel()
+        autosaveWork = nil
+        if let localURL {
+            backend.removeLocalCopy(localURL)
+        }
+        localURL = nil
+    }
+
     /// Max bytes we'll read into the viewer.
     private let maxBytes = 4 * 1024 * 1024
 
@@ -57,6 +69,13 @@ final class FileViewerModel: ObservableObject {
         error = nil
         do {
             let url = try await backend.localCopy(of: item)
+            var keepCopy = false
+            defer {
+                if !keepCopy { backend.removeLocalCopy(url) }
+            }
+            if let oldURL = localURL, oldURL != url {
+                backend.removeLocalCopy(oldURL)
+            }
             localURL = url
             let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
             if let size = attrs?[.size] as? Int, size > maxBytes {
@@ -67,6 +86,7 @@ final class FileViewerModel: ObservableObject {
             } else {
                 error = "Can't preview this file (binary or non-text)."
             }
+            keepCopy = true
         } catch {
             self.error = (error as? FileOpError)?.message ?? error.localizedDescription
         }
@@ -287,11 +307,11 @@ struct FileViewerView: View {
     /// flush the pending save first; otherwise ask Save / Don't Save / Cancel.
     @MainActor
     private func requestClose() {
-        guard model.isDirty else { onClose(); return }
+        guard model.isDirty else { model.cleanup(); onClose(); return }
         if SFTPSettings.shared.autoSave {
             Task { @MainActor in
                 await model.save()
-                if model.error == nil { onClose() }
+                if model.error == nil { model.cleanup(); onClose() }
             }
         } else {
             SarvAlert.present(
@@ -307,10 +327,10 @@ struct FileViewerView: View {
                 case 0:
                     Task { @MainActor in
                         await model.save()
-                        if model.error == nil { onClose() }
+                        if model.error == nil { model.cleanup(); onClose() }
                     }
                 case 1:
-                    onClose()
+                    model.cleanup(); onClose()
                 default:
                     break
                 }
